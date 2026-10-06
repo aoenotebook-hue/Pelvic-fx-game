@@ -1,0 +1,16 @@
+project_id = "pelvic-trauma-decisions"
+
+[functions.sync-events]
+verify_jwt = true
+
+[functions.start-attempt]
+verify_jwt = true
+
+[functions.cohort-leaderboard]
+verify_jwt = true
+
+[functions.faculty-workspace]
+verify_jwt = true
+
+[functions.completion-status]
+verify_jwt = true
