@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { initialWalk, stepWalk } from "../games/walking";
 import {
   pelvicTraumaContentV4 as content,
   v4CaseTitles,
@@ -48,17 +49,29 @@ export function MiniGameJourney({
   const { language } = useLanguage();
   const t = (en: string, th: string) => (language === "th" ? th : en);
   const [nodeId, setNodeId] = useState<string | null>(null),
-    [position, setPosition] = useState({ x: 50, y: 76 }),
+    [position, setPosition] = useState(initialWalk),
     [walking, setWalking] = useState(false),
     [panel, setPanel] = useState("hub");
   const held = useRef(new Set<string>()),
     room = useRef<HTMLDivElement>(null);
+  const motion = useRef(initialWalk);
+  const taps = useRef(new Map<string, number>());
+  const movementActive = !nodeId && panel === "hub";
+  const startWalking = (key: string) => {
+    held.current.add(key);
+    taps.current.set(key, performance.now() + 85);
+  };
+  const stopWalking = () => {
+    held.current.clear(); taps.current.clear();
+    motion.current = { ...motion.current, vx: 0, vy: 0 };
+    setWalking(false);
+  };
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [nodeId, panel]);
-  const p = deriveProgress(content, events),
-    reward = computeRewards(content, events, p);
-  const retrieval = retrievalEvidence(content, events);
+  const p = useMemo(() => deriveProgress(content, events), [events]);
+  const reward = useMemo(() => computeRewards(content, events, p), [events, p]);
+  const retrieval = useMemo(() => retrievalEvidence(content, events), [events]);
   const emit = (data: Record<string, unknown>) =>
     addEvent({
       ...createBaseEvent(attemptId, nextClientSequence(events)),
@@ -75,39 +88,41 @@ export function MiniGameJourney({
     );
   }, [view]);
   useEffect(() => {
+    if (!movementActive) { stopWalking(); return; }
     let frame = 0,
       last = 0;
     const move = (time: number) => {
-      const dt = Math.min(35, time - last || 16);
+      const dt = time - last || 16;
       last = time;
-      let dx = 0,
-        dy = 0;
-      for (const key of held.current) {
-        if (["arrowleft", "a"].includes(key)) dx--;
-        if (["arrowright", "d"].includes(key)) dx++;
-        if (["arrowup", "w"].includes(key)) dy--;
-        if (["arrowdown", "s"].includes(key)) dy++;
+      const keys = new Set(held.current);
+      for (const [key, until] of taps.current) {
+        if (time < until) keys.add(key); else taps.current.delete(key);
       }
-      setWalking(Boolean(dx || dy));
-      if (dx || dy)
-        setPosition((pos) => ({
-          x: Math.max(8, Math.min(92, pos.x + dx * dt * 0.012)),
-          y: Math.max(45, Math.min(89, pos.y + dy * dt * 0.012)),
-        }));
+      const bounds = room.current?.getBoundingClientRect();
+      const before = motion.current;
+      const next = stepWalk(before, keys, dt, bounds?.width ?? 0, bounds?.height ?? 0);
+      motion.current = next;
+      const moving = Math.hypot(next.vx, next.vy) > 2;
+      setWalking(moving);
+      if (next.x !== before.x || next.y !== before.y || next.facing !== before.facing) setPosition(next);
       frame = requestAnimationFrame(move);
     };
     frame = requestAnimationFrame(move);
     const release = (e: KeyboardEvent) =>
         held.current.delete(e.key.toLowerCase()),
-      stop = () => held.current.clear();
+      stop = () => stopWalking();
+    const visibility = () => { if (document.hidden) stop(); last = 0; };
     window.addEventListener("keyup", release);
     window.addEventListener("blur", stop);
+    document.addEventListener("visibilitychange", visibility);
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener("keyup", release);
       window.removeEventListener("blur", stop);
+      document.removeEventListener("visibilitychange", visibility);
+      held.current.clear(); taps.current.clear();
     };
-  }, []);
+  }, [movementActive]);
   const near = anchors
     .map((a, i) => ({
       i,
@@ -426,36 +441,7 @@ export function MiniGameJourney({
             ].includes(e.key.toLowerCase())
           ) {
             e.preventDefault();
-            held.current.add(e.key.toLowerCase());
-            if (!e.repeat) {
-              const key = e.key.toLowerCase();
-              setPosition((pos) => ({
-                x: Math.max(
-                  8,
-                  Math.min(
-                    92,
-                    pos.x +
-                      (["arrowleft", "a"].includes(key)
-                        ? -2
-                        : ["arrowright", "d"].includes(key)
-                          ? 2
-                          : 0),
-                  ),
-                ),
-                y: Math.max(
-                  45,
-                  Math.min(
-                    89,
-                    pos.y +
-                      (["arrowup", "w"].includes(key)
-                        ? -2
-                        : ["arrowdown", "s"].includes(key)
-                          ? 2
-                          : 0),
-                  ),
-                ),
-              }));
-            }
+            if (!e.repeat) startWalking(e.key.toLowerCase());
           }
           if (e.key === "Enter" && near.d < 19) enter(near.i);
         }}
@@ -495,12 +481,18 @@ export function MiniGameJourney({
             </span>
           </div>
         ))}
-        <img
-          className={`mini-walker ${walking ? "walking" : ""}`}
-          style={{ left: `${position.x}%`, top: `${position.y}%` }}
-          src={`/assets/upgrades/character-${avatar.reactionSet}-level-${reward.level}.png`}
-          alt={t("Your walking learner character", "ตัวละครผู้เรียนกำลังเดิน")}
-        />
+        <div
+          className={`mini-walker ${walking ? "walking" : ""} facing-${position.facing}`}
+          style={{ left: `${position.x}%`, top: `${position.y}%`, "--walk-depth": 0.91 + (position.y - 45) / 440 } as React.CSSProperties}
+        >
+          <span className="walk-shadow" aria-hidden="true" />
+          <div className="walk-facing">
+            <img
+              src={`/assets/upgrades/character-${avatar.reactionSet}-level-${reward.level}.png`}
+              alt={t("Your walking learner character", "ตัวละครผู้เรียนกำลังเดิน")}
+            />
+          </div>
+        </div>
       </div>
       <div className="mini-controls">
         <div className="dpad">
@@ -509,25 +501,23 @@ export function MiniGameJourney({
             ["left", -5, 0, "←"],
             ["down", 0, 5, "↓"],
             ["right", 5, 0, "→"],
-          ].map(([direction, dx, dy, symbol]) => (
+          ].map(([direction, , , symbol]) => (
             <button
               key={direction}
               className={`secondary ${direction}`}
               aria-label={t(`Move ${direction}`, `เดิน ${direction}`)}
               onPointerDown={(e) => {
+                e.preventDefault();
                 e.currentTarget.setPointerCapture(e.pointerId);
-                held.current.add(`arrow${direction}`);
+                startWalking(`arrow${direction}`);
               }}
               onPointerUp={() => held.current.delete(`arrow${direction}`)}
+              onPointerCancel={() => { held.current.delete(`arrow${direction}`); taps.current.delete(`arrow${direction}`); }}
               onLostPointerCapture={() =>
                 held.current.delete(`arrow${direction}`)
               }
               onClick={(e) => {
-                if (e.detail === 0)
-                  setPosition((pos) => ({
-                    x: Math.max(8, Math.min(92, pos.x + Number(dx))),
-                    y: Math.max(45, Math.min(89, pos.y + Number(dy))),
-                  }));
+                if (e.detail === 0) taps.current.set(`arrow${direction}`, performance.now() + 140);
               }}
             >
               {symbol}

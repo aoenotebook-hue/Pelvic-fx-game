@@ -2,6 +2,10 @@
 
 Date: 2026-10-07. Repository: `aoenotebook-hue/Pelvic-fx-game`; local review branch `redesign/minigames-v1`. Content v4 is draft.
 
+## Release follow-up
+
+The subsequent walking/release preparation passes **179 tests across 14 files**, TypeScript and the local Vite/PWA build. It adds six movement tests, three public production-configuration checks and one invitation-only sign-in test. The production configuration guard was separately invoked and correctly refused the missing connected settings rather than creating a demo release. The local keyboard check moved the learner smoothly left, changed facing, stopped fully, and reported no inspected console errors or horizontal overflow. Hosted cohort testing is blocked at the missing Supabase `courses` table; see `production-release-2026-10-07.md`. The original results below describe the initial redesign verification, not a successful production launch.
+
 ## Automated results
 
 - `npm run check`: **169 tests across 12 files pass**; TypeScript and Vite/PWA production build pass.

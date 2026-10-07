@@ -23,6 +23,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "latest",
     "@testing-library/react": "latest",
+    "@types/node": "24.19.1",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "6.1.1",

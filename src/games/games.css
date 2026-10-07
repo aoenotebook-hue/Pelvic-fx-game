@@ -272,17 +272,22 @@
 }
 .mini-walker {
   position: absolute;
-  transform: translate(-50%, -65%);
+  transform: translate(-50%, -65%) scale(var(--walk-depth, 1));
   height: 110px;
   width: 65px;
-  object-fit: contain;
   pointer-events: none;
   z-index: 5;
-  filter: drop-shadow(0 8px 4px #24334344);
+  will-change: left, top;
 }
-.mini-walker.walking {
-  animation: mini-walk 0.3s infinite alternate;
+.walk-facing { height: 100%; transform-origin: 50% 85%; }
+.mini-walker.facing-left .walk-facing { transform: scaleX(-1); }
+.mini-walker img { width: 100%; height: 100%; object-fit: contain; transform-origin: 50% 85%; }
+.walk-shadow { position: absolute; width: 45%; height: 8%; left: 27.5%; bottom: 5%; border-radius: 50%; background: #24334338; filter: blur(2px); }
+.mini-walker.walking img {
+  animation: mini-walk 0.38s linear infinite;
 }
+.mini-walker.walking .walk-shadow { animation: walk-shadow 0.19s ease-in-out infinite alternate; }
+.mini-controls .dpad button { touch-action: none; user-select: none; }
 .mini-controls {
   display: flex;
   gap: 0.75rem;
@@ -311,10 +316,13 @@
   overflow-wrap: anywhere;
 }
 @keyframes mini-walk {
-  to {
-    transform: translate(-50%, -68%) rotate(3deg);
-  }
+  0%, 50%, 100% { transform: translateY(0) rotate(0); }
+  12.5%, 37.5% { transform: translateY(-2px) rotate(-1deg); }
+  25% { transform: translateY(-3px) rotate(-1.5deg); }
+  62.5%, 87.5% { transform: translateY(-2px) rotate(1deg); }
+  75% { transform: translateY(-3px) rotate(1.5deg); }
 }
+@keyframes walk-shadow { to { opacity: 0.65; transform: scaleX(0.88); } }
 @keyframes reward-rise {
   from {
     transform: translateY(8px);
@@ -349,7 +357,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .reward-pop,
-  .mini-walker.walking {
+  .mini-walker.walking img,
+  .mini-walker.walking .walk-shadow {
     animation: none !important;
   }
 }
