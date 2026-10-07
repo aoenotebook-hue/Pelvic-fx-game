@@ -1,3 +1,4 @@
+import type { MiniGameSpec, LOId, LocalText } from "../games/spec.ts";
 export type Confidence = "low" | "medium" | "high";
 export type GovernanceStatus = "draft" | "in_review" | "approved" | "published" | "retired";
 export type Role = "learner" | "faculty" | "editor" | "admin";
@@ -68,7 +69,13 @@ export interface Node {
   retryId: string;
   nextNodeId: string | null;
   scenePhase?: string;
-  interaction?: "action" | "image_choice" | "handover";
+  interaction?: "action" | "image_choice" | "handover" | MiniGameSpec["kind"];
+  game?: MiniGameSpec;
+  objectiveIds?: LOId[];
+  sourceRefs?: {doc:"S"|"H"|"LP";page:number}[];
+  reviewNote?: string;
+  stage?: "practice"|"boss"|"gauntlet";
+  translation?: {title:LocalText;story:LocalText;key:LocalText;why:LocalText};
   rationaleRequired?: boolean;
   explanationBeforeChoices?: boolean;
   teaching?: { objective: string; keyMessage: string; misconception: string; discussionPrompt: string; suggestedFeedback: string; sources: string[] };
@@ -76,6 +83,7 @@ export interface Node {
 }
 
 export interface CorrectionItem {
+  game?: MiniGameSpec;
   contentVersion?: string;
   id: string;
   parentNodeId: string | null;
@@ -184,6 +192,8 @@ export interface CoreResponseEvent extends BaseEvent {
   presentationOrder: string[];
   confidence?: Confidence;
   rationale?: string;
+  gameAnswer?: unknown;
+  gameScore?: number;
 }
 
 export interface FeedbackEvent extends BaseEvent { type: "feedback_ack"; nodeId: string; }
@@ -192,6 +202,8 @@ export interface CorrectionResponseEvent extends BaseEvent {
   correctionId: string;
   selectedOptionId: string;
   feedbackAcknowledged: boolean;
+  gameAnswer?: unknown;
+  gameScore?: number;
 }
 export interface ResourceEvent extends BaseEvent { type: "resource_viewed"; resourceId: string; nodeId?: string; stage?: "question" | "feedback" | "correction"; }
 export interface CorrectionAcknowledgment extends BaseEvent { type: "correction_feedback_ack"; correctionId: string; responseEventId: string; }

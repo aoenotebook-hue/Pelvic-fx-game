@@ -1,10 +1,11 @@
 import { pelvicTraumaContent as legacy } from "./content.v1";
 import { pelvicTraumaContentV2 } from "./content.v2";
 import { pelvicTraumaContentV3 } from "./content.v3";
+import { pelvicTraumaContentV4 } from "./content.v4";
 import type { ContentVersion } from "../domain/types";
 
-export const contentVersions = new Map([legacy, pelvicTraumaContentV2, pelvicTraumaContentV3].map((content) => [content.id, content]));
-export const latestContent = pelvicTraumaContentV3;
+export const contentVersions = new Map([legacy, pelvicTraumaContentV2, pelvicTraumaContentV3, pelvicTraumaContentV4].map((content) => [content.id, content]));
+export const latestContent = pelvicTraumaContentV4;
 export function getContent(version: string): ContentVersion {
   const content = contentVersions.get(version);
   if (!content) throw new Error(`Unsupported content version: ${version}`);

@@ -1,4 +1,5 @@
-import { withSupabase } from "npm:@supabase/server@1";
+import { belongsToCourse } from "../../../src/domain/access.ts";
+import { withSupabase } from "npm:@supabase/server@1.9.1";
 import {supportedVersion} from "../../../src/domain/serverRules.ts";
 
 type Body = { attemptId?: string; courseId?: string; contentVersion?: string; kind?: "initial" | "practice" };
@@ -8,7 +9,7 @@ export default {
   fetch: withSupabase({ auth: "user" }, async (request, ctx) => {
     if (request.method !== "POST") return fail("Method not allowed", 405);
     let body:Body;try{body=await request.json();}catch{return fail("Invalid JSON");}
-    const userId = ctx.userClaims?.sub;
+    const userId = ctx.userClaims?.id;
     if (!userId || !body.attemptId || !body.courseId || !body.contentVersion || !supportedVersion(body.contentVersion) || !["initial","practice"].includes(body.kind??"")) return fail("Invalid request");
 
     const { data: existingAttempt } = await ctx.supabaseAdmin.from("attempts").select("id,reporting_status,server_accepted_at").eq("id", body.attemptId).eq("user_id", userId).eq("course_id",body.courseId).eq("content_version",body.contentVersion).maybeSingle();
@@ -16,7 +17,7 @@ export default {
 
     const { data: memberships } = await ctx.supabaseAdmin
       .from("memberships").select("cohort_id, cohorts!inner(course_id)").eq("user_id", userId);
-    const membership = (memberships ?? []).find((row) => row.cohorts?.course_id === body.courseId);
+    const membership = (memberships ?? []).find((row) => belongsToCourse(row.cohorts,body.courseId!));
     if (!membership) return fail("No authorized course membership", 403);
 
     const { data: content } = await ctx.supabaseAdmin.from("content_versions").select("id,status").eq("id", body.contentVersion).eq("status", "published").maybeSingle();

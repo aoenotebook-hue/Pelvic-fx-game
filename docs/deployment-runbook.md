@@ -1,5 +1,19 @@
 # Deployment runbook
 
+## v1.0 mini-game draft
+
+Do not replace main/production until reviewed. Test the `redesign/minigames-v1` branch as a Vercel preview using the existing Vite project/build settings and committed npm lockfile. No Vercel deployment was made during this revision.
+
+Apply migrations **001 initial → reward collections → learning reviews → 202610070001 minigame evidence** in an approved staging project. The fourth widens reward/core-score constraints and adds derived objective/mistake/star JSON; it does not publish v4 or change learner-response immutability/teacher-observation permissions. Keep old content records and attempt versions available.
+
+Deploy all five updated functions together, with `supabase/functions/import_map.json` and their referenced `src/content`, `src/domain` and `src/games` modules. Their configured import map resolves old extensionless content imports and pins Zod to the browser lockfile version. The verified `@supabase/server` dependency is pinned to 1.9.1. Auth identity uses `userClaims.id` (not the obsolete `userClaims.sub`); course embeds are normalized for object/array shapes. Both were checked locally with the Deno runtime. No privileged key belongs in a `VITE_` variable.
+
+After clinical/image approval, register an immutable **published** `ptd-minigame-draft-2026-10-07` bundle in `content_versions` through trusted institutional administration, or create a new approved content ID with matching registry/server rules. Do not edit the question/scoring payload under an already-used ID. Configure the existing `.env.example` variables, approved Auth/redirect URLs, courses, cohorts, memberships, faculty assignments and privacy/support policy. A project URL/ID alone does not complete this setup.
+
+Staging acceptance: real learner sign-in → own attempt → raw response sync → server recomputation → confirmed receipt, including reconnect/empty-queue recovery; assigned faculty versus another cohort; roster not-started denominators; private review saving/history; CSV exports; matching-version tied podium ranks. Local rule and type checks do not establish live RLS/function success. No live credentials, approvals, service deployment or database execution were available/claimed here.
+
+The teacher CSVs import into Excel or Google Sheets (File → Import → Upload). A scheduled direct Sheets integration is not enabled; do not publish identifiable learner notes to a public spreadsheet. Initial PWA caching includes supplied PDFs/images, around 41 MB; test installation, airplane mode, storage eviction and update recovery on actual devices before cohort delivery.
+
 ## v0.9 learning evidence and staff review
 
 Apply the third migration after the two existing migrations in a reviewed staging project. Deploy all five functions with shared domain files `types.ts`, `engine.ts`, `learningRules.ts`, `authorization.ts`, `serverRules.ts`, `rewardRules.ts`. `faculty-workspace` protects summary/evidence/review operations by assigned cohort; `completion-status` checks authenticated attempt ownership. No production service was changed here.

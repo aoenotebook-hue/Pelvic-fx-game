@@ -1,11 +1,11 @@
-import {withSupabase} from "npm:@supabase/server@1";
+import {withSupabase} from "npm:@supabase/server@1.9.1";
 import {assignedFaculty} from "../../../src/domain/authorization.ts";
 const fail=(message:string,status=400)=>Response.json({error:message},{status});
 export default {fetch:withSupabase({auth:"user"},async(request,ctx)=>{
  if(request.method!=="POST")return fail("Method not allowed",405);
  const raw=await request.text();if(new TextEncoder().encode(raw).length>12000)return fail("Request too large",413);
  let body;try{body=JSON.parse(raw);}catch{return fail("Invalid JSON");}
- const userId=ctx.userClaims?.sub;if(!userId||!body.courseId)return fail("Authentication and course required",401);
+ const userId=ctx.userClaims?.id;if(!userId||!body.courseId)return fail("Authentication and course required",401);
  const {data:roles,error:roleError}=await ctx.supabaseAdmin.from("role_assignments").select("role,cohort_id").eq("user_id",userId);
  const {data:cohorts,error:cohortError}=await ctx.supabaseAdmin.from("cohorts").select("id").eq("course_id",body.courseId);
  if(roleError||cohortError)return fail("Authorization lookup failed",500);
@@ -18,7 +18,7 @@ export default {fetch:withSupabase({auth:"user"},async(request,ctx)=>{
   const draft=body.payload;const attempt=(attempts??[]).find(attempt=>attempt.id===draft?.attemptId);
   if(!attempt||draft.contentVersion!==attempt.content_version)return fail("Attempt access or version mismatch",403);
   const states=["not_observed","needs_discussion","with_prompting","without_prompting"],dimensions=["clinical_interpretation","priorities_supervised_action","uncertainty_request"];
-  if(!["case","concept"].includes(draft.scope)||!(draft.scope==="case"?["mission-1","mission-2","mission-3"]:["S1","S2","S3","S4","S5","S6"]).includes(draft.scopeId)||!draft.rubric||!dimensions.every(key=>states.includes(draft.rubric[key]))||![draft.observation,draft.feedback,draft.nextStep].every(value=>typeof value==="string"&&value.length<=1500))return fail("Invalid observation");
+  if(!["case","concept"].includes(draft.scope)||!(draft.scope==="case"?["mission-0","mission-1","mission-2","mission-3","mission-4"]:["S1","S2","S3","S4","S5","S6"]).includes(draft.scopeId)||!draft.rubric||!dimensions.every(key=>states.includes(draft.rubric[key]))||![draft.observation,draft.feedback,draft.nextStep].every(value=>typeof value==="string"&&value.length<=1500))return fail("Invalid observation");
   const review={attemptId:attempt.id,contentVersion:attempt.content_version,scope:draft.scope,scopeId:draft.scopeId,rubric:Object.fromEntries(dimensions.map(key=>[key,draft.rubric[key]])),observation:draft.observation,feedback:draft.feedback,nextStep:draft.nextStep,id:crypto.randomUUID(),reviewerId:userId,reviewedAt:new Date().toISOString()};
   const {error}=await ctx.supabaseAdmin.from("teaching_observations").insert({id:review.id,attempt_id:attempt.id,cohort_id:attempt.cohort_id,content_version:attempt.content_version,reviewer_id:userId,reviewed_at:review.reviewedAt,payload:review});
   return error?fail("Review not saved",500):Response.json({review});

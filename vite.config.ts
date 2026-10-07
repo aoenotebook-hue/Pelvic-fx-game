@@ -3,6 +3,19 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          includeDependenciesRecursively: false,
+          groups: [
+            { name: "react-runtime", test: /node_modules\/(?:react|react-dom|scheduler)\// },
+            { name: "validation", test: /node_modules\/zod\// }
+          ]
+        }
+      }
+    }
+  },
   plugins: [
     react(),
     VitePWA({

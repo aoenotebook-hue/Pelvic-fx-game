@@ -1,0 +1,12 @@
+{
+  "imports": {
+    "zod": "npm:zod@4.6.5",
+    "../../src/content/content.v1": "../../src/content/content.v1.ts",
+    "../../src/content/content.v2": "../../src/content/content.v2.ts",
+    "../../src/domain/schema": "../../src/domain/schema.ts",
+    "../../src/domain/engine": "../../src/domain/engine.ts",
+    "../../src/domain/rewardRules": "../../src/domain/rewardRules.ts",
+    "../../src/games/spec": "../../src/games/spec.ts",
+    "../../src/games/evaluate": "../../src/games/evaluate.ts"
+  }
+}

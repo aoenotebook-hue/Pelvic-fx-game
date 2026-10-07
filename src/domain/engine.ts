@@ -1,5 +1,7 @@
 import type { ContentVersion, DerivedProgress, LearningEvent, SafetyConceptId } from "./types.ts";
 import { correctionReviewed, handoverPrepared } from "./learningRules.ts";
+import { MINIGAME_VERSION } from "../games/spec.ts";
+import { evaluate } from "../games/evaluate.ts";
 
 const conceptCore: Record<SafetyConceptId, string[]> = {
   S1: ["M1N1", "M1N2"], S2: ["M1N3"], S3: ["M1N4"], S4: ["M2N4"], S5: ["M3N2"], S6: ["M3N1"]
@@ -38,10 +40,10 @@ export function deriveProgress(content: ContentVersion, events: LearningEvent[])
   for (const node of content.nodes) {
     const response = core.get(node.id);
     if (!response) continue;
-    if (answerIsCorrect(content, node.id, response.selectedOptionIds)) score += 2;
+    if (answerIsCorrect(content, node.id, response.selectedOptionIds) && (!node.game || evaluate(node.game,response.gameAnswer).correct)) score += 2;
     else {
       const successful = (corrections.get(node.retryId) ?? []).some((event) => event.selectedOptionId === content.corrections.find((item) => item.id === node.retryId)?.correctOptionId && event.feedbackAcknowledged);
-      const explicitlyReviewed = (corrections.get(node.retryId) ?? []).some(event => event.selectedOptionId === content.corrections.find(item => item.id === node.retryId)?.correctOptionId && correctionReviewed(ordered,event));
+      const explicitlyReviewed = (corrections.get(node.retryId) ?? []).some(event => event.selectedOptionId === content.corrections.find(item => item.id === node.retryId)?.correctOptionId && (!node.game||evaluate(node.game,event.gameAnswer).correct) && correctionReviewed(ordered,event));
       if (node.explanationBeforeChoices !== undefined ? explicitlyReviewed : successful) { score += 1; correctedNodeIds.push(node.id); }
     }
   }
@@ -55,11 +57,12 @@ export function deriveProgress(content: ContentVersion, events: LearningEvent[])
   const concepts = (Object.keys(conceptCore) as SafetyConceptId[]).map((conceptId) => {
     const teacherResult = teacher.get(conceptId);
     if (teacherResult?.result === "resolved") return { conceptId, resolved: true, route: "teacher" as const };
-    const coreResolved = conceptCore[conceptId].every((nodeId) => {
+    const conceptNodes=content.id===MINIGAME_VERSION?content.nodes.filter(node=>node.conceptIds.includes(conceptId)).map(node=>node.id):conceptCore[conceptId];
+    const coreResolved = conceptNodes.length>0&&conceptNodes.every((nodeId) => {
       const response = core.get(nodeId);
       const node = content.nodes.find((item) => item.id === nodeId);
       if (!response || !node || !feedback.has(nodeId)) return false;
-      if (answerIsCorrect(content, nodeId, response.selectedOptionIds)) return true;
+      if (answerIsCorrect(content, nodeId, response.selectedOptionIds) && (!node.game || evaluate(node.game,response.gameAnswer).correct)) return true;
       return correctedNodeIds.includes(nodeId);
     });
     const latestFinal = [...finalAttempts].reverse().find((attempt) => content.finalForms.find((form) => form.id === attempt.formId)?.questions.some((question) => question.conceptId === conceptId));
@@ -81,15 +84,15 @@ export function deriveProgress(content: ContentVersion, events: LearningEvent[])
 
   const missionReviewed: Record<string, boolean> = {};
   const revised = content.nodes.some((node) => node.rationaleRequired !== undefined);
-  const firstCorrectNodeIds = content.nodes.filter((node) => { const response = core.get(node.id); return response && answerIsCorrect(content, node.id, response.selectedOptionIds); }).map((node) => node.id);
+  const firstCorrectNodeIds = content.nodes.filter((node) => { const response = core.get(node.id); return response && answerIsCorrect(content, node.id, response.selectedOptionIds)&&(!node.game||evaluate(node.game,response.gameAnswer).correct); }).map((node) => node.id);
   const clearedNodeIds = content.nodes.filter((node) => {
     const response = core.get(node.id);
-    return response && feedback.has(node.id) && (!node.rationaleRequired || Boolean(response.rationale?.trim())) && (!node.explanationBeforeChoices || handoverPrepared(ordered,response)) && (answerIsCorrect(content, node.id, response.selectedOptionIds) || correctedNodeIds.includes(node.id));
+    return response && feedback.has(node.id) && (!node.rationaleRequired || Boolean(response.rationale?.trim())) && (!node.explanationBeforeChoices || handoverPrepared(ordered,response)) && ((answerIsCorrect(content, node.id, response.selectedOptionIds) && (!node.game || evaluate(node.game,response.gameAnswer).correct)) || correctedNodeIds.includes(node.id));
   }).map((node) => node.id);
-  const handoverNotes = content.nodes.filter((node) => node.interaction === "handover").map((node) => ({ missionId: node.missionId, nodeId: node.id, text: core.get(node.id)?.rationale?.trim() ?? "" }));
+  const handoverNotes = content.nodes.filter((node) => node.interaction === "handover"||node.interaction==="handover_builder").map((node) => ({ missionId: node.missionId, nodeId: node.id, text: core.get(node.id)?.rationale?.trim() ?? "" }));
   for (const mission of content.missions) {
     missionReviewed[mission.id] = (revised ? mission.nodeIds.every((nodeId) => clearedNodeIds.includes(nodeId)) : mission.nodeIds.every((nodeId) => core.has(nodeId) && feedback.has(nodeId))) &&
-      mission.nodeIds.filter((nodeId) => content.nodes.find((node) => node.id === nodeId)?.safetyFlag)
+      (content.id === MINIGAME_VERSION ? [] : mission.nodeIds.filter((nodeId) => content.nodes.find((node) => node.id === nodeId)?.safetyFlag))
         .every((nodeId) => content.nodes.find((node) => node.id === nodeId)?.conceptIds.every((conceptId) => concepts.find((item) => item.conceptId === conceptId)?.resolved));
   }
   const latestFinal = finalAttempts.at(-1);

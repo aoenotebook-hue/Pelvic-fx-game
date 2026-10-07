@@ -1,4 +1,4 @@
-import { withSupabase } from "npm:@supabase/server@1";
+import { withSupabase } from "npm:@supabase/server@1.9.1";
 import { validateLearnerEvent, recomputeServerSummary, serverRules } from "../../../src/domain/serverRules.ts";
 import {validateLearningSequence} from "../../../src/domain/learningRules.ts";
 import type {LearningEvent} from "../../../src/domain/types.ts";
@@ -23,7 +23,7 @@ export default {
     let body: { courseId?: string; events?: IncomingEvent[] };
     try { body = JSON.parse(raw); } catch { return reject("Invalid JSON"); }
     if (!body.courseId || !Array.isArray(body.events) || body.events.length > serverRules.maxBatchEvents) return reject("Invalid batch");
-    const userId = ctx.userClaims?.sub;
+    const userId = ctx.userClaims?.id;
     if (!userId) return reject("Authentication required", 401);
 
     const acknowledgments: Array<{ eventId: string; serverReceiptTimestamp: string }> = [];

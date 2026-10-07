@@ -1,7 +1,7 @@
 import {beforeEach,describe,it,expect,vi} from "vitest";
 import {resolveSession,beginRevision,saveSession} from "./session";
 import {LEGACY_VERSION} from "../domain/rewards";
-import {LEARNING_VERSION as REVISION_VERSION} from "../domain/learningRules";
+import {MINIGAME_VERSION as REVISION_VERSION} from "../games/spec";
 import {loadEvents} from "./db";
 import {appConfig} from "../config";
 vi.mock("./db",()=>({loadEvents:vi.fn(async()=>[])}));

@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, { clothingLevel, nodeReactions } from "./App";
 import { appendEventAtomically } from "./storage/db";
+import { activateContent } from "./content/registry";
 
 vi.mock("./storage/db", async () => ({
   loadEvents: vi.fn(async () => []), getOfflinePack: vi.fn(async () => undefined), pendingEvents: vi.fn(async () => []),
@@ -11,7 +12,7 @@ vi.mock("./storage/db", async () => ({
 }));
 
 describe("learner entry", () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {localStorage.clear();activateContent("ptd-learning-draft-2026-10-03");localStorage.setItem("ptd-active-attempt:demo:demo-learner-001:demo-course",JSON.stringify({attemptId:"legacy-learning-test",contentVersion:"ptd-learning-draft-2026-10-03"}));});
   afterEach(cleanup);
   it("shows the real learning start and demo boundary", async () => {
     render(<App />);
