@@ -129,6 +129,7 @@ export function localizeMission(mission: Mission, language: Language): Mission {
 }
 
 export function localizeNode(node: Node, language: Language): Node {
+  if(node.translation)return {...node,stem:node.translation.story[language],question:node.translation.title[language],teaching:node.teaching?{...node.teaching,keyMessage:node.translation.key[language],suggestedFeedback:node.translation.key[language]}:undefined};
   const revision = (node.contentVersion === LEARNING_VERSION ? learningRevisionById : revisionById).get(node.id);
   if (language === "th" && [REVISION_ID, LEARNING_VERSION].includes(node.contentVersion) && revision) {
     const copy = revision.th;

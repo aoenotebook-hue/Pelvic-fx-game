@@ -1,8 +1,28 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { loadEnv } from "vite";
+import { releaseConfigurationErrors } from "./src/domain/releaseConfig.ts";
+
+if (process.env.VERCEL_ENV === "production") {
+  const errors = releaseConfigurationErrors({ ...loadEnv("production", process.cwd(), "VITE_"), ...process.env });
+  if (errors.length) throw new Error(`Production release blocked: ${errors.join("; ")}. Demo fallback is not permitted.`);
+}
 
 export default defineConfig({
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          includeDependenciesRecursively: false,
+          groups: [
+            { name: "react-runtime", test: /node_modules\/(?:react|react-dom|scheduler)\// },
+            { name: "validation", test: /node_modules\/zod\// }
+          ]
+        }
+      }
+    }
+  },
   plugins: [
     react(),
     VitePWA({

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { miniGameSchema } from "../games/spec";
 
 const id = z.string().min(1).max(120);
 const nullableText = z.string().max(500).nullable();
@@ -17,11 +18,13 @@ const node = z.object({
   correctOptionIds: z.array(id).min(1), responseMode: z.enum(["single", "multiple"]), rationalePrompt: z.string().min(1),
   confidenceOptions: z.array(z.enum(["low", "medium", "high"])).length(3), acceptedConditions: z.array(z.string()),
   resourceIds: z.array(id).min(1), referenceIds: z.array(id), retryId: id, nextNodeId: id.nullable(),
-  scenePhase: z.string().optional(), interaction: z.enum(["action", "image_choice", "handover"]).optional(), rationaleRequired: z.boolean().optional(),
+  scenePhase: z.string().optional(), interaction: z.enum(["action", "image_choice", "handover","card_sort","memory_match","sequence","hotspot","image_pick","card_pick","gauge","ring_trace","handover_builder","mcq"]).optional(), rationaleRequired: z.boolean().optional(),
+  game:miniGameSchema.optional(),objectiveIds:z.array(z.enum(["LO1","LO2","LO3","LO4","LO5","LO6","LO7"])).optional(),sourceRefs:z.array(z.object({doc:z.enum(["S","H","LP"]),page:z.number().int().positive()})).optional(),reviewNote:z.string().optional(),stage:z.enum(["practice","boss","gauntlet"]).optional(),
   explanationBeforeChoices:z.boolean().optional(), teaching:z.object({objective:z.string(),keyMessage:z.string(),misconception:z.string(),discussionPrompt:z.string(),suggestedFeedback:z.string(),sources:z.array(z.string()).min(1)}).optional(),
   visuals: z.array(z.object({ assetId: id, placement: z.enum(["question", "feedback"]), role: z.literal("teaching_example") })).optional()
 });
 const correction = z.object({
+  game:miniGameSchema.optional(),
   id, contentVersion: id.optional(), parentNodeId: id.nullable(), conceptIds: z.array(z.enum(["S1", "S2", "S3", "S4", "S5", "S6"])),
   outcomeIds: z.array(z.enum(["O1", "O2", "O3", "O4", "O5", "O6"])), resourceId: id,
   stem: z.string().min(1), options: z.array(option).min(2), correctOptionId: id, workedExample: z.string().min(1)
@@ -30,8 +33,8 @@ const finalQuestion = z.object({ id, conceptId: z.enum(["S1", "S2", "S3", "S4", 
 
 export const contentVersionSchema = z.object({
   id, title: z.string().min(1), governance,
-  missions: z.array(z.object({ id, contentVersion: id.optional(), number: z.number().int().positive(), title: z.string().min(1), entry: z.string().min(1), estimatedMinutes: z.number().positive(), nodeIds: z.array(id).min(1) })).length(3),
-  nodes: z.array(node).length(15), corrections: z.array(correction).length(15),
+  missions: z.array(z.object({ id, contentVersion: id.optional(), number: z.number().int().positive(), title: z.string().min(1), entry: z.string().min(1), estimatedMinutes: z.number().positive(), nodeIds: z.array(id).min(1) })).min(3),
+  nodes: z.array(node).min(15), corrections: z.array(correction).min(15),
   resources: z.array(z.object({ id, contentVersion: id.optional(), title: z.string().min(1), estimatedMinutes: z.number().nonnegative(), body: z.array(z.string().min(1)).min(1), selfPrompt: z.string().optional(), assetIds: z.array(id).optional(), sourceDocumentIds: z.array(id).optional() })).min(4),
   sourceDocuments: z.array(z.object({ id, title: z.string().min(1), href: z.string().min(1), language: z.string().min(1), note: z.string().min(1) })).min(1),
   assets: z.array(z.object({ id, path: z.string().nullable(), versionHash: z.string(), sourceUrl: z.string().nullable(), owner: z.string().nullable(), licensePermission: z.string().nullable(), reviewStatus: z.enum(["not_provided", "pending", "approved"]), reviewer: z.string().nullable(), reviewDate: z.string().nullable(), altText: z.string(), caption: z.string(), optional: z.boolean(), downloadBytes: z.number().int().nonnegative() })).min(1),

@@ -2,15 +2,20 @@ project_id = "pelvic-trauma-decisions"
 
 [functions.sync-events]
 verify_jwt = true
+import_map = "./functions/import_map.json"
 
 [functions.start-attempt]
 verify_jwt = true
+import_map = "./functions/import_map.json"
 
 [functions.cohort-leaderboard]
 verify_jwt = true
+import_map = "./functions/import_map.json"
 
 [functions.faculty-workspace]
 verify_jwt = true
+import_map = "./functions/import_map.json"
 
 [functions.completion-status]
 verify_jwt = true
+import_map = "./functions/import_map.json"

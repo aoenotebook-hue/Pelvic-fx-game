@@ -1,8 +1,13 @@
-// Provider-neutral, dependency-free rule summary used by the browser tests and the Supabase sync function.
+// Provider-neutral rules shared by browser tests and the Supabase sync function.
 import { LEGACY_VERSION, REVISION_VERSION, rewardLedger } from "./rewardRules.ts";
 import { LEARNING_VERSION } from "./learningRules.ts";
 import { deriveProgress } from "./engine.ts";
 import type {ContentVersion,LearningEvent,SafetyConceptId} from "./types.ts";
+import { MINIGAME_VERSION } from "../games/spec.ts";
+import { evaluate,outcomeId } from "../games/evaluate.ts";
+import { pelvicTraumaContentV4 } from "../content/content.v4.ts";
+import { computeRewards } from "./rewards.ts";
+import { miniGameEvidence,retrievalEvidence } from "./assessment.ts";
 export const serverRules = {
   contentVersion: "ptd-en-draft-2026-10-01",
   nodeKeys: {
@@ -36,9 +41,10 @@ export const revisedRules = {
   correctionKeys: { M1N1_R:"M1N1_R_C",M1N2_R:"M1N2_R_A",M1N3_R:"M1N3_R_B",M1N5_R:"M1N5_R_A",M1N4_R:"M1N4_R_C",M1N6_R:"M1N6_R_A",M2N1_R:"M2N1_R_B",M2N2_R:"M2N2_R_C",M2N3_R:"M2N3_R_A",M2N4_R:"M2N4_R_C",M2N5_R:"M2N5_R_B",M3N1_R:"M3N1_R_C",M3N2_R:"M3N2_R_A",M3N3_R:"M3N3_R_C",M3N4_R:"M3N4_R_B" }
 } as const;
 export const handoverNodes = ["M1N6","M2N5","M3N4"];
-export function supportedVersion(version: string) { return [LEGACY_VERSION,REVISION_VERSION,LEARNING_VERSION].includes(version); }
+export function supportedVersion(version: string) { return [LEGACY_VERSION,REVISION_VERSION,LEARNING_VERSION,MINIGAME_VERSION].includes(version); }
 export function validateLearnerEvent(event: Record<string,unknown>): string | null {
   if (!supportedVersion(String(event.contentVersion))) return "Unsupported content version";
+  if(event.contentVersion===MINIGAME_VERSION)return validateMiniGameEvent(event);
   const allowed = ["core_response","feedback_ack","correction_response","resource_viewed","reflection_submitted","issue_reported","final_submitted","final_feedback_ack","final_correction",...(event.contentVersion===LEARNING_VERSION?["handover_prepared","correction_feedback_ack"]:[])];
   if (!allowed.includes(String(event.type))) return "Unauthorized event type";
   const nodeId = String(event.nodeId ?? "");
@@ -60,6 +66,7 @@ export function validateLearnerEvent(event: Record<string,unknown>): string | nu
 }
 export function recomputeServerSummary(events: ServerEvent[], version = events[0]?.contentVersion ?? LEGACY_VERSION) {
   if (!supportedVersion(version)) throw new Error("Unsupported content version");
+  if(version===MINIGAME_VERSION){const valid=events.filter(event=>validateMiniGameEvent(event as unknown as Record<string,unknown>)===null) as unknown as LearningEvent[];const p=deriveProgress(pelvicTraumaContentV4,valid),r=computeRewards(pelvicTraumaContentV4,valid,p);return{...legacySummary(events),core_score:p.score,first_final_score:retrievalEvidence(pelvicTraumaContentV4,valid).firstScore,latest_final_score:retrievalEvidence(pelvicTraumaContentV4,valid).resolvedScore,reviewed_missions:Object.values(p.missionReviewed).filter(Boolean).length,resolved_concepts:p.concepts.filter(c=>c.resolved).length,answered_nodes:p.answeredNodeIds.length,completed:p.locallyComplete,completed_at:p.locallyComplete?new Date().toISOString():null,completion_route:p.locallyComplete?"ordinary":null,reflection_submitted:Boolean(p.reflection),reward_total:r.total,reward_maximum:r.maximum,reward_scheme:r.scheme,first_correct:p.firstCorrectNodeIds.length,corrected_nodes:p.correctedNodeIds.length,clothing_level:r.level,case_stamps:r.caseStamps,safety_badges:r.safetyBadges,reward_achievements:r.achievements,objective_evidence:miniGameEvidence(pelvicTraumaContentV4,valid).objectives,station_mistakes:miniGameEvidence(pelvicTraumaContentV4,valid).mistakes,station_stars:miniGameEvidence(pelvicTraumaContentV4,valid).stars};}
   if(version===LEARNING_VERSION) return learningSummary(events);
   const rules = version === LEGACY_VERSION ? serverRules : revisedRules;
   const ordered = events.filter((event)=>!event.contentVersion || event.contentVersion === version).slice().sort((a,b)=>a.clientSequence-b.clientSequence || (a.eventId ?? "").localeCompare(b.eventId ?? ""));
@@ -79,6 +86,17 @@ export function recomputeServerSummary(events: ServerEvent[], version = events[0
   const completed = version === LEGACY_VERSION ? old.completed : cases.length===3 && badges.length===6 && reflection;
   const rewards = rewardLedger({version,firstCorrect,corrected,cleared,cases,badges,completed});
   return {...old, core_score:firstCorrect.length*2+corrected.length, reviewed_missions:cases.length, resolved_concepts:badges.length, answered_nodes:responses.size, completed, completion_route:completed ? "ordinary" : null, completed_at:completed ? old.completed_at ?? new Date().toISOString() : null, reward_total:rewards.total, reward_maximum:rewards.maximum, reward_scheme:rewards.scheme, first_correct:firstCorrect.length, corrected_nodes:corrected.length, clothing_level:rewards.level, case_stamps:rewards.caseStamps, safety_badges:rewards.safetyBadges, reward_achievements:rewards.achievements};
+}
+function validateMiniGameEvent(event:Record<string,unknown>):string|null {
+ const node=pelvicTraumaContentV4.nodes.find(n=>n.id===event.nodeId||n.retryId===event.correctionId);
+ if(["core_response","correction_response"].includes(String(event.type))){if(!node?.game)return "Unknown station";const id=event.type==="core_response"?node.id:node.retryId;const expected=outcomeId(id,node.game,event.gameAnswer);const selected=event.type==="core_response"?event.selectedOptionIds:[event.selectedOptionId];if(!Array.isArray(selected)||selected.length!==1||selected[0]!==expected)return "Game outcome does not match server evaluation";const score=evaluate(node.game,event.gameAnswer).score;if(typeof event.gameScore!=="number"||Math.abs(event.gameScore-score)>1e-9)return "Game score does not match server evaluation";if(event.rationale!==undefined&&(typeof event.rationale!=="string"||event.rationale.length>360))return "Invalid reason";if(event.confidence!==undefined&&!["low","medium","high"].includes(String(event.confidence)))return "Invalid confidence";if(event.type==="core_response"&&node.rationaleRequired&&(typeof event.rationale!=="string"||!event.rationale.trim()))return "Handover reason required";return null;}
+ if(event.type==="feedback_ack")return node?null:"Unknown station";
+ if(event.type==="correction_feedback_ack")return node&&typeof event.responseEventId==="string"?null:"Invalid correction review";
+ if(event.type==="handover_prepared")return node?.rationaleRequired&&typeof event.text==="string"&&event.text.trim()&&event.text.length<=360?null:"Invalid handover";
+ if(event.type==="resource_viewed")return pelvicTraumaContentV4.resources.some(r=>r.id===event.resourceId)&&(!event.nodeId||Boolean(node))?null:"Unknown reference";
+ if(event.type==="reflection_submitted")return typeof event.text==="string"&&event.text.trim()&&event.text.length<=1500?null:"Invalid shift review";
+ if(event.type==="issue_reported")return typeof event.message==="string"&&event.message.length<=800?null:"Invalid issue";
+ return "Unauthorized event type";
 }
 function learningSummary(events:ServerEvent[]) {
  const nodes=Object.entries(revisedRules.nodeKeys).map(([id,key])=>({id,correctOptionIds:[key],retryId:id+"_R",rationaleRequired:handoverNodes.includes(id),explanationBeforeChoices:handoverNodes.includes(id),interaction:handoverNodes.includes(id)?"handover":"action",missionId:"mission-"+id[1],safetyFlag:Object.values(serverRules.safety).some(ids=>(ids as readonly string[]).includes(id)),conceptIds:Object.entries(serverRules.safety).filter(([,ids])=>(ids as readonly string[]).includes(id)).map(([id])=>id as SafetyConceptId)}));

@@ -79,7 +79,7 @@ export class SupabaseBackendAdapter implements BackendAdapter {
   async recoverCompletion(attemptId:string) { const client=await this.clientPromise; const {data,error}=await client.functions.invoke("completion-status",{body:{courseId:appConfig.courseId,attemptId}});if(error)throw error;return data.completionReceipt as SyncResult["completionReceipt"]; }
   async signIn(email: string) {
     const client = await this.clientPromise;
-    const { error } = await client.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } });
+    const { error } = await client.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin, shouldCreateUser: false } });
     if (error) throw error;
   }
   async signOut() { const client = await this.clientPromise; const { error } = await client.auth.signOut(); if (error) throw error; }

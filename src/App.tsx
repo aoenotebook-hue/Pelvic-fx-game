@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, CircleHelp, ClipboardCheck, Cloud, CloudOff, Download, GraduationCap, Home, LayoutDashboard, LockKeyhole, Map, Play, RefreshCw, ShieldCheck, TriangleAlert, Wifi, WifiOff } from "lucide-react";
 import { appConfig } from "./config";
+import { MiniGameJourney } from "./screens/MiniGameJourney";
+import { ArtGallery } from "./art/ArtGallery";
+import { MINIGAME_VERSION } from "./games/spec";
 import { correctionReviewed, LEARNING_VERSION } from "./domain/learningRules";
 import { LearningSummary } from "./learning/LearningSummary";
 import { FacultyWorkspace } from "./faculty/FacultyWorkspace";
@@ -190,6 +193,7 @@ function App() {
   }, [progress.answeredNodeIds.length, progress.score, progress.locallyComplete]);
 
   if (!ready) return <div className="loading" role="status">Loading your saved learning…</div>;
+  if(import.meta.env.DEV&&window.location.hash==="#/art")return <ArtGallery/>;
 
   return (
     <I18nContext.Provider value={{ language, setLanguage }}>
@@ -213,7 +217,7 @@ function App() {
       </header>
 
       {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss message">×</button></div>}
-      {updateAvailable && <div className="notice update" role="status"><span>Update available. Finish your current answer before refreshing.</span><button onClick={() => window.location.reload()}>Refresh now</button></div>}
+      {updateAvailable && <div className="notice update" role="status"><span>Update available. Finish your current answer before refreshing.</span><button onClick={() => window.dispatchEvent(new CustomEvent("ptd:apply-update"))}>Refresh now</button></div>}
 
       <div className="layout">
         <nav className="side-nav" aria-label="Main navigation">
@@ -234,6 +238,7 @@ function App() {
         <main id="main-content" className="main">
           {activeVersion !== latestContent.id && <div className="version-resume"><span>{language === "th" ? "กำลังทำเวอร์ชันเดิมที่บันทึกไว้" : "Resuming your original saved version"}</span><button className="quiet" onClick={() => void startRevision()}>{language === "th" ? "เปิดเรื่องราวและ rewards ใหม่" : "Open revised cases and rewards"}</button></div>}
           <GlobalProgress progress={progress.answeredNodeIds.length} />
+          {activeVersion===MINIGAME_VERSION&&!["avatar","access","faculty","help"].includes(view)?<><MiniGameJourney events={events} addEvent={addEvent} attemptId={attemptId} partition={accountKey} avatar={avatar} view={view}/><button className="secondary" onClick={downloadPack}>{language==="th"?"ดาวน์โหลดสำหรับ offline":"Download for offline"} · {offlineState}</button></>:<>
           {view === "avatar" && <AvatarPicker selectedId={avatar.id} choose={(id) => { localStorage.setItem("ptd-avatar", id); setAvatarId(id); setView("home"); }} />}
           {view === "home" && <HomeView progress={progress} start={start} go={setView} openMission={(node: string) => { setNodeId(node); setView("decision"); }} offlineState={offlineState} downloadPack={downloadPack} packBytes={packBytes} installPrompt={installPrompt} setInstallPrompt={setInstallPrompt} avatar={avatar} masteredCount={masteredCount} rewardScore={rewardScore} chooseAvatar={() => setView("avatar")} />}
           {view === "access" && <AccessView />}
@@ -244,6 +249,7 @@ function App() {
           {view === "reflection" && <ReflectionView events={events} addEvent={addEvent} progress={progress} go={setView} />}
           {view === "progress" && <ProgressView progress={progress} events={events} go={setView} sync={sync} avatarId={avatar.id} />}
           {view === "followup" && <FollowUp />}
+          </>}
           {view === "faculty" && (staffAuthorized ? <FacultyDashboard progress={progress} events={events} addEvent={addEvent} /> : <p>Assigned faculty authorization is required.</p>)}
           {view === "help" && <HelpView addEvent={addEvent} events={events} offlineState={offlineState} installPrompt={installPrompt} setInstallPrompt={setInstallPrompt} />}
         </main>
@@ -258,7 +264,8 @@ function NavButton({ icon, label, active, onClick }: { icon: React.ReactNode; la
 }
 
 function GlobalProgress({ progress }: { progress: number }) {
-  return <div className="global-progress" aria-label={`${progress} of 15 core decisions answered`}><span style={{ width: `${Math.round(progress / 15 * 100)}%` }} /></div>;
+  const count=pelvicTraumaContent.nodes.length;
+  return <div className="global-progress" aria-label={`${progress} of ${count} learning stations answered`}><span style={{ width: `${Math.round(progress / count * 100)}%` }} /></div>;
 }
 
 function AvatarPicker({ selectedId, choose }: { selectedId: string; choose(id: string): void }) {
@@ -366,7 +373,7 @@ function SimulationRoute({ progress, chooseMission, avatarPath, avatarId, master
   </section>;
 }
 
-export function clothingLevel(rewardScore: number) { return clothingLevelFor(rewardScore, pelvicTraumaContent.id === LEGACY_VERSION ? "legacy-150" : "collections-250"); }
+export function clothingLevel(rewardScore: number) { return clothingLevelFor(rewardScore, pelvicTraumaContent.id === LEGACY_VERSION ? "legacy-150" : pelvicTraumaContent.id===MINIGAME_VERSION?"minigames-v4":"collections-250"); }
 
 function RewardBadge({ rewardScore }: { rewardScore: number }) {
   const level = clothingLevel(rewardScore);

@@ -4,12 +4,14 @@ import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import "./styles.css";
 import "./overrides.css";
+import "./games/games.css";
 
-registerSW({
+const applyServiceWorkerUpdate=registerSW({
   immediate: false,
   onNeedRefresh() { window.dispatchEvent(new CustomEvent("ptd:update-available")); },
   onOfflineReady() { window.dispatchEvent(new CustomEvent("ptd:offline-ready")); }
 });
+window.addEventListener("ptd:apply-update",()=>{void applyServiceWorkerUpdate(true);});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode><App /></StrictMode>
