@@ -129,9 +129,35 @@ export async function getOfflinePack(accountKey: string, version: string): Promi
   return (await getDb()).get("packs", `${accountKey}:${version}`);
 }
 
+/** Adds server-accepted events missing on this device (e.g. after sign-in on a new or cleared device). */
+export async function importServerEvents(accountKey: string, events: LearningEvent[]): Promise<number> {
+  const db = await getDb();
+  const transaction = db.transaction("events", "readwrite");
+  let added = 0;
+  for (const event of events) {
+    const existing = await transaction.store.get(event.eventId);
+    if (existing) {
+      if (existing.accountKey === accountKey && existing.outboxStatus === "pending") await transaction.store.put({ ...existing, outboxStatus: "acknowledged", serverReceiptTimestamp: event.serverReceiptTimestamp });
+      continue;
+    }
+    await transaction.store.add({ ...event, accountKey, outboxStatus: "acknowledged" } as StoredEvent);
+    added++;
+  }
+  await transaction.done;
+  return added;
+}
+
+/** Removes this account's learning records, drafts and settings from the device (shared-computer sign-out). */
 export async function clearAccountData(accountKey: string): Promise<void> {
   const db = await getDb();
+  const range = IDBKeyRange.bound([accountKey, ""], [accountKey, "\uffff"]);
   const eventTx = db.transaction("events", "readwrite");
-  for (const event of await eventTx.store.index("by-account-attempt").getAll(IDBKeyRange.bound([accountKey, ""], [accountKey, "\uffff"]))) await eventTx.store.delete(event.eventId);
+  for (const event of await eventTx.store.index("by-account-attempt").getAll(range)) await eventTx.store.delete(event.eventId);
   await eventTx.done;
+  const draftTx = db.transaction("drafts", "readwrite");
+  for (const draft of await draftTx.store.index("by-account-attempt").getAll(range)) await draftTx.store.delete(draft.key);
+  await draftTx.done;
+  const settingTx = db.transaction("settings", "readwrite");
+  for (const key of await settingTx.store.getAllKeys()) if (String(key).includes(accountKey)) await settingTx.store.delete(key);
+  await settingTx.done;
 }

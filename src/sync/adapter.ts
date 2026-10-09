@@ -55,6 +55,8 @@ export interface BackendAdapter {
   signOut?(): Promise<void>;
   facultyWorkspace?(operation:string, payload?:unknown):Promise<FacultyWorkspaceData>;
   recoverCompletion?(attemptId:string):Promise<SyncResult["completionReceipt"]>;
+  /** The signed-in learner's own accepted events for one attempt (RLS: owner only). Used to restore a device. */
+  loadOwnEvents?(attemptId:string):Promise<LearningEvent[]>;
   onAuthChange?(callback:(userId:string|null)=>void):()=>void;
 }
 
@@ -131,6 +133,12 @@ export class SupabaseBackendAdapter implements BackendAdapter {
         lastEventAt: typeof summary.last_event_at === "string" ? summary.last_event_at : null
       };
     });
+  }
+  async loadOwnEvents(attemptId: string): Promise<LearningEvent[]> {
+    const client = await this.clientPromise;
+    const { data, error } = await client.from("response_events").select("payload,server_receipt_timestamp,event_type").eq("attempt_id", attemptId).neq("event_type", "rejected").order("client_sequence");
+    if (error) throw error;
+    return (data ?? []).map((row) => ({ ...(row.payload as LearningEvent), serverReceiptTimestamp: row.server_receipt_timestamp as string }));
   }
   async syncEvents(events: LearningEvent[]): Promise<SyncResult> {
     const client = await this.clientPromise;

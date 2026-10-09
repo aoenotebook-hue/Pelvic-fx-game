@@ -12,14 +12,14 @@ import { computeRewards, clothingLevelFor, rankRewards, LEGACY_VERSION } from ".
 import { beginRevision, resolveSession } from "./storage/session";
 import { answerIsCorrect, deriveProgress, nextClientSequence } from "./domain/engine";
 import type { Confidence, LearningEvent, Node, SafetyConceptId } from "./domain/types";
-import { acknowledgeEvents, hasCompletionReceipt, appendEventAtomically, getOfflinePack, loadDraft, loadEvents, pendingEvents, saveDraft, stageOfflinePack, storeSubmissionRejections, submissionRejections } from "./storage/db";
+import { clearAccountData, importServerEvents, acknowledgeEvents, hasCompletionReceipt, appendEventAtomically, getOfflinePack, loadDraft, loadEvents, pendingEvents, saveDraft, stageOfflinePack, storeSubmissionRejections, submissionRejections } from "./storage/db";
 import { createBackendAdapter } from "./sync/adapter";
 import { validateLearnerEvent } from "./domain/serverRules";
 
 const SYNCED_TYPES = new Set(["core_response","correction_response","feedback_ack","correction_feedback_ack","handover_prepared","resource_viewed","reflection_submitted"]);
 import type { LeaderboardRow } from "./sync/adapter";
 import { createBaseEvent, setActiveLearnerId, setActiveContentVersion } from "./utils/events";
-import { I18nContext, localizeCorrection, localizeMission, localizeNode, localizeResource, t, useLanguage, type Language } from "./i18n";
+import { I18nContext, isProblemNotice, localizeNotice, localizeCorrection, localizeMission, localizeNode, localizeResource, t, useLanguage, type Language } from "./i18n";
 
 type View = "avatar" | "home" | "access" | "orientation" | "missions" | "decision" | "resources" | "reflection" | "progress" | "followup" | "faculty" | "help";
 type CharacterReaction = "observe" | "urgent" | "inspect" | "communicate" | "celebrate" | "reconsider";
@@ -53,6 +53,15 @@ function App() {
   const [nodeId, setNodeId] = useState("M1N1");
   const [offlineState, setOfflineState] = useState<"none" | "downloading" | "ready" | "incomplete">("none");
   const [notice, setNotice] = useState("");
+  // Counts nav taps, so pressing the current tab still returns to its top level inside the game.
+  const [navSignal, setNavSignal] = useState(0);
+  const navigate = (next: View) => { setView(next); setNavSignal((value) => value + 1); };
+  // Information notices fade after a few seconds; problems stay until dismissed.
+  useEffect(() => {
+    if (!notice || isProblemNotice(notice)) return;
+    const timer = window.setTimeout(() => setNotice(""), 3500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const [online, setOnline] = useState(navigator.onLine);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -81,6 +90,8 @@ function App() {
         if(appConfig.mode==="connected"&&!userId){setView("access");return;}
         const partition=`${appConfig.mode}:${userId??appConfig.demoUserId}`;
         const session=await resolveSession(partition,userId??appConfig.demoUserId);
+        // Restore accepted answers from the server first, so a new or cleared device shows the learner's real progress.
+        if(appConfig.mode==="connected"&&backend.loadOwnEvents){try{await importServerEvents(partition,await backend.loadOwnEvents(session.attemptId));}catch{/* Offline: local records are still used. */}}
         const [stored,pack]=await Promise.all([loadEvents(partition,session.attemptId),getOfflinePack(partition,session.contentVersion)]);
         if(!active||revision!==generation)return;
         accountKey=partition;attemptId=session.attemptId;setActiveLearnerId(userId??appConfig.demoUserId);
@@ -110,34 +121,46 @@ function App() {
       if (SYNCED_TYPES.has(event.type)) { const problem = validateLearnerEvent(event as unknown as Record<string, unknown>); if (problem) { setNotice(`Not saved: ${problem}`); return false; } }
       const saved=await appendEventAtomically(partition, event);
       if(partition===accountKey && event.attemptId===attemptId) setEvents((current) => current.some(item=>item.eventId===event.eventId)?current:[...current,saved??event]);
-      setNotice("Saved on this device");
-      return true;
+      return true; // Saving is shown by the sync counter; a banner after every tap would cover the game.
     } catch {
       setNotice("Not saved. Check available browser storage and try again.");
       return false;
     }
   }, []);
 
-  const sync = useCallback(async () => {
-    if (!online) { setNotice("Connect to submit"); return; }
+  const signOut = async () => {
+    const unsent = (await pendingEvents(accountKey)).length;
+    const warning = language === "th"
+      ? `ยังมี ${unsent} รายการที่ยังไม่ได้ส่ง หากออกจากระบบตอนนี้ รายการเหล่านี้จะหายไปจากเครื่องนี้ ต้องการออกจากระบบหรือไม่?`
+      : `${unsent} answer(s) have not been sent yet. Signing out now removes them from this device. Sign out anyway?`;
+    if (unsent && !window.confirm(warning)) return;
+    // Shared computers: remove this learner's answers, drafts and attempt pointers from the device.
+    await clearAccountData(accountKey).catch(() => undefined);
+    // Attempt IDs stay (they are not personal data) so the next sign-in resumes the same attempt from the server.
+    await backend.signOut?.();
+  };
+  const sync = useCallback(async (manual = true) => {
+    // Background syncs stay quiet unless something needs the learner's attention.
+    const tell = (message: string, problem = false) => { if (manual || problem) setNotice(message); };
+    if (!online) { if (manual) setNotice("Connect to submit"); return; }
     if(syncRunning.current)return;syncRunning.current=true;
     const partition=accountKey,targetAttempt=attemptId;
     try {
       const queued = await pendingEvents(partition);
-      if (!queued.length) { const receipt=await backend.recoverCompletion?.(targetAttempt); if(receipt)await acknowledgeEvents(partition,[],receipt); if(partition===accountKey)setEvents(await loadEvents(partition,targetAttempt)); setNotice(receipt?"Course completion confirmed":"No pending events; completion status checked."); return; }
+      if (!queued.length) { const receipt=await backend.recoverCompletion?.(targetAttempt); if(receipt)await acknowledgeEvents(partition,[],receipt); if(partition===accountKey)setEvents(await loadEvents(partition,targetAttempt)); tell(receipt?"Course completion confirmed":"No pending events; completion status checked."); return; }
       const result = await backend.syncEvents(queued);
       await acknowledgeEvents(partition, result.acknowledgments, result.completionReceipt);
       await storeSubmissionRejections(partition,result.rejected);
       try {const recovered=await backend.recoverCompletion?.(targetAttempt);if(recovered)await acknowledgeEvents(partition,[],recovered);}catch {/* Acknowledgments are durable even if receipt recovery must retry. */}
       const refreshed = await loadEvents(partition, targetAttempt);
       if(partition===accountKey&&targetAttempt===attemptId)setEvents(refreshed);
-      setNotice(appConfig.mode === "demo" ? "Demo sync checked locally; no course server was contacted." : result.rejected.length || result.retryable.length ? `Accepted ${result.acknowledgments.length}; ${result.retryable.length} waiting and ${result.rejected.length} rejected. Completion is not confirmed.` : result.completionReceipt ? "Course completion confirmed" : "Events accepted; course completion not yet confirmed.");
+      tell(appConfig.mode === "demo" ? "Demo sync checked locally; no course server was contacted." : result.rejected.length || result.retryable.length ? `Accepted ${result.acknowledgments.length}; ${result.retryable.length} waiting and ${result.rejected.length} rejected. Completion is not confirmed.` : result.completionReceipt ? "Course completion confirmed" : "Events accepted; course completion not yet confirmed.", result.rejected.length > 0);
     } catch {
-      setNotice("Submission did not finish. Your work remains saved on this device.");
+      tell("Submission did not finish. Your work remains saved on this device.", manual);
     } finally {syncRunning.current=false;}
   }, [online]);
 
-  useEffect(() => { if(!online||!ready)return;const timer=setTimeout(()=>{void sync();},400);return()=>clearTimeout(timer); }, [online,ready,pendingCount,authRevision,sync]);
+  useEffect(() => { if(!online||!ready)return;const timer=setTimeout(()=>{void sync(false);},400);return()=>clearTimeout(timer); }, [online,ready,pendingCount,authRevision,sync]);
 
   useEffect(() => {
     document.documentElement.scrollTop = 0;
@@ -197,7 +220,7 @@ function App() {
     return () => lifecycle.abort();
   }, [progress.answeredNodeIds.length, progress.score, progress.locallyComplete]);
 
-  if (!ready) return <div className="loading" role="status">Loading your saved learning…</div>;
+  if (!ready) return <div className="loading" role="status">{language === "th" ? "กำลังโหลดงานที่บันทึกไว้…" : "Loading your saved learning…"}</div>;
   if(import.meta.env.DEV&&window.location.hash==="#/art")return <ArtGallery/>;
 
   return (
@@ -209,32 +232,32 @@ function App() {
             <img src="/assets/faculty-mahidol.png" alt="Mahidol University" />
             <img src="/assets/cnmi.png" alt="CNMI Ramathibodi Orthopaedic Surgery" />
           </div>
-          <button className="brand" onClick={() => setView("home")} aria-label="Pelvic Trauma Decisions home">
+          <button className="brand" onClick={() => navigate("home")} aria-label="Pelvic Trauma Decisions home">
             <span className="brand-mark" aria-hidden="true">PT</span>
             <span><strong>Pelvic Trauma Decisions</strong><small>{t("pre-class clinical quest", language)}</small></span>
           </button>
         </div>
         <div className="status-cluster">
           <button className="language-toggle" onClick={() => setLanguage(language === "en" ? "th" : "en")} aria-label={language === "en" ? "เปลี่ยนเป็นภาษาไทย" : "Switch to English"}>{language === "en" ? "ไทย" : "EN"}</button>
-          <button className="demo-pill" onClick={() => setView("access")}>{appConfig.mode === "demo" ? "DEMO · fictional records" : "CONNECTED"}</button>
+          <button className="demo-pill" onClick={() => setView("access")}>{t(appConfig.mode === "demo" ? "DEMO · fictional records" : "CONNECTED", language)}</button>
           <span className="connection" aria-live="polite">{online ? <Wifi size={16} /> : <WifiOff size={16} />}{t(online ? "Online" : "Offline", language)}</span>
         </div>
       </header>
 
-      {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss message">×</button></div>}
-      {updateAvailable && <div className="notice update" role="status"><span>Update available. Finish your current answer before refreshing.</span><button onClick={() => window.dispatchEvent(new CustomEvent("ptd:apply-update"))}>Refresh now</button></div>}
+      {notice && <div className={isProblemNotice(notice) ? "notice problem" : "notice"} role={isProblemNotice(notice) ? "alert" : "status"}><span>{localizeNotice(notice, language)}</span><button onClick={() => setNotice("")} aria-label={language === "th" ? "ปิดข้อความ" : "Dismiss message"}>×</button></div>}
+      {updateAvailable && <div className="notice update" role="status"><span>{t("Update available. Finish your current answer before refreshing.", language)}</span><button onClick={() => window.dispatchEvent(new CustomEvent("ptd:apply-update"))}>{t("Refresh now", language)}</button></div>}
 
       <div className="layout">
         <nav className="side-nav" aria-label="Main navigation">
-          <NavButton icon={<Home />} label={t("Home", language)} active={view === "home"} onClick={() => setView("home")} />
-          <NavButton icon={<Map />} label={t("Quests", language)} active={["missions", "decision"].includes(view)} onClick={() => setView("missions")} />
-          <NavButton icon={<BookOpen />} label={t("Resources", language)} active={view === "resources"} onClick={() => setView("resources")} />
-          <NavButton icon={<ClipboardCheck />} label={t("My progress", language)} active={["progress", "reflection"].includes(view)} onClick={() => setView("progress")} />
-          {staffAuthorized && <NavButton icon={<LayoutDashboard />} label={t("Faculty demo", language)} active={view === "faculty"} onClick={() => setView("faculty")} />}
-          {appConfig.mode === "connected" && <button className="quiet" onClick={()=>void backend.signOut?.()}>Sign out</button>}
-          <NavButton icon={<CircleHelp />} label={t("Help", language)} active={view === "help"} onClick={() => setView("help")} />
+          <NavButton icon={<Home />} label={t("Home", language)} active={view === "home"} onClick={() => navigate("home")} />
+          <NavButton icon={<Map />} label={t("Quests", language)} active={["missions", "decision"].includes(view)} onClick={() => navigate("missions")} />
+          <NavButton icon={<BookOpen />} label={t("Resources", language)} active={view === "resources"} onClick={() => navigate("resources")} />
+          <NavButton icon={<ClipboardCheck />} label={t("My progress", language)} active={["progress", "reflection"].includes(view)} onClick={() => navigate("progress")} />
+          {staffAuthorized && <NavButton icon={<LayoutDashboard />} label={t(appConfig.mode === "demo" ? "Faculty demo" : "Faculty", language)} active={view === "faculty"} onClick={() => navigate("faculty")} />}
+          {appConfig.mode === "connected" && <button className="quiet sign-out" onClick={()=>void signOut()}>{t("Sign out", language)}</button>}
+          <NavButton icon={<CircleHelp />} label={t("Help", language)} active={view === "help"} onClick={() => navigate("help")} />
           <div className="nav-sync">
-            <button className="secondary full" onClick={sync}><RefreshCw size={18} /> {t("Sync now", language)}</button>
+            <button className="secondary full" onClick={()=>void sync(true)}><RefreshCw size={18} /> {t("Sync now", language)}</button>
             <small>{pendingCount ? `${pendingCount} ${t("waiting to sync", language)}` : t("Saved and checked", language)}</small>
           </div>
           <small className="game-credit">{t("Game by Sorawut Thamyongkit", language)}</small>
@@ -243,7 +266,7 @@ function App() {
         <main id="main-content" className="main">
           {activeVersion !== latestContent.id && <div className="version-resume"><span>{language === "th" ? "กำลังทำเวอร์ชันเดิมที่บันทึกไว้" : "Resuming your original saved version"}</span><button className="quiet" onClick={() => void startRevision()}>{language === "th" ? "เปิดเรื่องราวและ rewards ใหม่" : "Open revised cases and rewards"}</button></div>}
           <GlobalProgress progress={progress.answeredNodeIds.length} />
-          {activeVersion===MINIGAME_VERSION&&!["avatar","access","faculty","help"].includes(view)?<><MiniGameJourney events={events} addEvent={addEvent} attemptId={attemptId} partition={accountKey} avatar={avatar} view={view}/><button className="secondary" onClick={downloadPack}>{language==="th"?"ดาวน์โหลดสำหรับ offline":"Download for offline"} · {offlineState}</button></>:<>
+          {activeVersion===MINIGAME_VERSION&&!["avatar","access","faculty","help"].includes(view)?<><MiniGameJourney events={events} addEvent={addEvent} attemptId={attemptId} partition={accountKey} avatar={avatar} view={view} navSignal={navSignal} hubFooter={<button className="secondary offline-download" onClick={downloadPack}>{language==="th"?"ดาวน์โหลดสำหรับใช้ offline":"Download for offline use"} · {t(offlineLabel(offlineState), language)}</button>}/></>:<>
           {view === "avatar" && <AvatarPicker selectedId={avatar.id} choose={(id) => { localStorage.setItem("ptd-avatar", id); setAvatarId(id); setView("home"); }} />}
           {view === "home" && <HomeView progress={progress} start={start} go={setView} openMission={(node: string) => { setNodeId(node); setView("decision"); }} offlineState={offlineState} downloadPack={downloadPack} packBytes={packBytes} installPrompt={installPrompt} setInstallPrompt={setInstallPrompt} avatar={avatar} masteredCount={masteredCount} rewardScore={rewardScore} chooseAvatar={() => setView("avatar")} />}
           {view === "access" && <AccessView />}
@@ -252,16 +275,20 @@ function App() {
           {view === "decision" && <DecisionFlow nodeId={nodeId} setNodeId={setNodeId} events={events} addEvent={addEvent} go={setView} avatarPath={avatar.path} avatarId={avatar.id} masteredCount={masteredCount} />}
           {view === "resources" && <ResourcesView addEvent={addEvent} events={events} go={setView} />}
           {view === "reflection" && <ReflectionView events={events} addEvent={addEvent} progress={progress} go={setView} />}
-          {view === "progress" && <ProgressView progress={progress} events={events} go={setView} sync={sync} avatarId={avatar.id} />}
+          {view === "progress" && <ProgressView progress={progress} events={events} go={setView} sync={() => void sync(true)} avatarId={avatar.id} />}
           {view === "followup" && <FollowUp />}
           </>}
-          {view === "faculty" && (staffAuthorized ? <FacultyDashboard progress={progress} events={events} addEvent={addEvent} /> : <p>Assigned faculty authorization is required.</p>)}
-          {view === "help" && <HelpView addEvent={addEvent} events={events} offlineState={offlineState} installPrompt={installPrompt} setInstallPrompt={setInstallPrompt} />}
+          {view === "faculty" && (staffAuthorized ? <FacultyDashboard progress={progress} events={events} addEvent={addEvent} /> : <p>{language === "th" ? "ต้องเป็นอาจารย์ที่ได้รับมอบหมายและยืนยันตัวตนสองขั้นตอนแล้ว" : "Assigned faculty authorization (with two-step verification) is required."}</p>)}
+          {view === "help" && <HelpView addEvent={addEvent} events={events} offlineState={offlineState} installPrompt={installPrompt} setInstallPrompt={setInstallPrompt} signOut={signOut} />}
         </main>
       </div>
     </div>
     </I18nContext.Provider>
   );
+}
+
+function offlineLabel(state: "none" | "downloading" | "ready" | "incomplete") {
+  return { none: "not downloaded", downloading: "downloading…", ready: "ready offline", incomplete: "incomplete — retry" }[state];
 }
 
 function NavButton({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick(): void }) {
@@ -430,14 +457,17 @@ function Orientation({ go }: { go(view: View): void }) {
 }
 
 function AccessView() {
+  const { language } = useLanguage();
+  const tr = (en: string, th: string) => (language === "th" ? th : en);
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("");
   const requestLink = async () => {
     if (!backend.signIn || !email.trim()) return;
-    try { await backend.signIn(email.trim()); setStatus("Check your institutional email for the individual sign-in link."); }
-    catch { setStatus("Sign-in could not be started. Check the configured identity provider and redirect URL."); }
+    // Same message whether or not the address is enrolled, so the screen cannot be used to discover accounts.
+    try { await backend.signIn(email.trim()); setStatus(tr("If this email is enrolled, a personal sign-in link has been sent. Check your institutional inbox.", "หากอีเมลนี้ลงทะเบียนไว้ ระบบได้ส่งลิงก์เข้าสู่ระบบแล้ว ตรวจสอบกล่องอีเมลของสถาบัน")); }
+    catch { setStatus(tr("If this email is enrolled, a personal sign-in link has been sent. Check your institutional inbox.", "หากอีเมลนี้ลงทะเบียนไว้ ระบบได้ส่งลิงก์เข้าสู่ระบบแล้ว ตรวจสอบกล่องอีเมลของสถาบัน")); }
   };
-  return <section className="reading page-enter"><span className="eyebrow">ACCESS AND IDENTITY</span><h1>{appConfig.mode === "demo" ? "Local demonstration" : "Institutional sign-in"}</h1>{appConfig.mode === "demo" ? <><p>This clearly labelled demo uses one fictional learner partition on this device. It is not an enrolled cohort and cannot issue a real course receipt.</p><div className="worked"><span>Demo boundary</span><p>No production database, invitations or institutional identity service were contacted. Switching to connected mode requires the environment and Supabase setup in the README.</p></div></> : <><p>Use your individually invited account. A shared course code may select a cohort but never grants access or a faculty role.</p><label><span>Institutional email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label><button className="primary" disabled={!email.trim()} onClick={requestLink}>Send sign-in link</button><p role="status">{status}</p></>}</section>;
+  return <section className="reading page-enter"><span className="eyebrow">{tr("ACCESS AND IDENTITY", "การเข้าใช้และตัวตน")}</span><h1>{appConfig.mode === "demo" ? tr("Local demonstration", "โหมดทดลองในเครื่อง") : tr("Institutional sign-in", "เข้าสู่ระบบด้วยบัญชีสถาบัน")}</h1>{appConfig.mode === "demo" ? <><p>{tr("This labelled demo uses one fictional learner on this device. It is not an enrolled cohort and cannot issue a real course receipt.", "โหมดทดลองนี้ใช้ผู้เรียนสมมติหนึ่งคนในเครื่องนี้ ไม่ใช่รายวิชาจริงและออกใบยืนยันการเรียนไม่ได้")}</p><div className="worked"><span>{tr("Demo boundary", "ขอบเขตโหมดทดลอง")}</span><p>{tr("No course database or institutional sign-in was contacted.", "ไม่ได้ติดต่อฐานข้อมูลรายวิชาหรือระบบเข้าสู่ระบบของสถาบัน")}</p></div></> : <><p>{tr("Use your individually invited account. A shared course code never grants access or a teacher role.", "ใช้บัญชีที่ได้รับเชิญเป็นรายบุคคล รหัสรายวิชาที่ใช้ร่วมกันไม่ให้สิทธิ์เข้าใช้หรือสิทธิ์อาจารย์")}</p><label><span>{tr("Institutional email", "อีเมลสถาบัน")}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label><button className="primary" disabled={!email.trim()} onClick={requestLink}>{tr("Send sign-in link", "ส่งลิงก์เข้าสู่ระบบ")}</button><p role="status">{status}</p></>}</section>;
 }
 
 function MissionMap({ events, progress, choose }: { events: LearningEvent[]; progress: ReturnType<typeof deriveProgress>; choose(nodeId: string): void }) {
@@ -643,7 +673,25 @@ function FacultyDashboard({events}: {progress:ReturnType<typeof deriveProgress>;
 
 function FollowUp() { return <section className="reading"><span className="eyebrow">AFTER CLASS</span><h1>Follow-up links</h1><p>No teacher-controlled day-2 or day-7 link has been released in this demo. Unseen assessment keys are not included in the offline pack.</p></section>; }
 
-function HelpView({ addEvent, events, offlineState, installPrompt, setInstallPrompt }: any) { const [message, setMessage] = useState(""); const [rejected,setRejected]=useState<Array<{eventId:string;reason:string}>>([]); useEffect(()=>{void submissionRejections(accountKey).then(setRejected).catch(()=>undefined);},[events]); const submit = async () => { await addEvent({ ...createBaseEvent(attemptId, nextClientSequence(events)), type: "issue_reported", nodeId: null, message: message.trim() }); setMessage(""); }; const install = async () => { if (installPrompt) { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null); } }; return <section className="stack page-enter"><div><span className="eyebrow">HELP AND RECOVERY</span><h1>Keep your work safe</h1></div>{rejected.length>0 && <article className="panel"><h2>Rejected records — still saved locally</h2>{rejected.map(item=><p key={item.eventId}>{item.reason} · {item.eventId}</p>)}<p>Contact the course team before retrying. Original responses have not been erased.</p></article>}<div className="help-grid"><article className="panel"><Download /><h2>Offline and installation</h2><p>First access and download require internet. Current pack: <strong>{offlineState}</strong>. Browser storage can be cleared or evicted, so sync when you reconnect.</p><button className="secondary" onClick={install} disabled={!installPrompt}>{installPrompt ? "Install this app" : "Use browser install menu"}</button><p><strong>iPhone:</strong> open in Safari, tap Share, then Add to Home Screen. Android Chrome normally offers Install app in its menu.</p></article><article className="panel"><ShieldCheck /><h2>Privacy and account changes</h2><p>Progress is partitioned by account on this device. Sign out only after syncing. Remote revocation cannot instantly erase an offline device; the learning content contains no patient data.</p></article><article className="panel report"><CircleHelp /><h2>Report a confusing question</h2><label><span>What was confusing?</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={800} /></label><button className="primary" disabled={!message.trim()} onClick={submit}>Save report</button><small>If offline, the report waits on this device and is submitted only for the same account.</small></article></div><details><summary>Support diagnostics</summary><pre>{JSON.stringify({ mode: appConfig.mode, online: navigator.onLine, contentVersion: pelvicTraumaContent.id, accountPartition: accountKey, eventCount: events.length, offlineState }, null, 2)}</pre></details></section>; }
+function HelpView({ addEvent, events, offlineState, installPrompt, setInstallPrompt, signOut }: any) {
+  const { language } = useLanguage();
+  const tr = (en: string, th: string) => (language === "th" ? th : en);
+  const [message, setMessage] = useState("");
+  const [rejected, setRejected] = useState<Array<{ eventId: string; reason: string }>>([]);
+  useEffect(() => { void submissionRejections(accountKey).then(setRejected).catch(() => undefined); }, [events]);
+  const submit = async () => { await addEvent({ ...createBaseEvent(attemptId, nextClientSequence(events)), type: "issue_reported", nodeId: null, message: message.trim() }); setMessage(""); };
+  const install = async () => { if (installPrompt) { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null); } };
+  return <section className="stack page-enter">
+    <div><span className="eyebrow">{tr("HELP AND RECOVERY", "ช่วยเหลือและกู้ข้อมูล")}</span><h1>{tr("Keep your work safe", "เก็บงานของคุณให้ปลอดภัย")}</h1></div>
+    {rejected.length > 0 && <article className="panel"><h2>{tr("Records the course server did not accept", "รายการที่เซิร์ฟเวอร์รายวิชาไม่รับ")}</h2>{rejected.map(item => <p key={item.eventId}>{item.reason}</p>)}<p>{tr("Your other answers keep syncing normally. Tell your teacher if this keeps happening.", "คำตอบอื่นยังส่งได้ตามปกติ แจ้งอาจารย์หากเกิดซ้ำ")}</p></article>}
+    <div className="help-grid">
+      <article className="panel"><Download /><h2>{tr("Offline and installation", "ใช้แบบ offline และติดตั้งแอป")}</h2><p>{tr("First access and download need the internet. Offline pack: ", "การเปิดครั้งแรกและดาวน์โหลดต้องใช้อินเทอร์เน็ต สถานะไฟล์ offline: ")}<strong>{t(offlineLabel(offlineState), language)}</strong>. {tr("Browsers can clear stored files, so sync when you reconnect.", "เบราว์เซอร์อาจลบไฟล์ที่เก็บไว้ ให้ sync เมื่อกลับมาออนไลน์")}</p><button className="secondary" onClick={install} disabled={!installPrompt}>{installPrompt ? tr("Install this app", "ติดตั้งแอปนี้") : tr("Use the browser's install menu", "ใช้เมนูติดตั้งของเบราว์เซอร์")}</button><p><strong>iPhone:</strong> {tr("open in Safari, tap Share, then Add to Home Screen. Android Chrome offers Install app in its menu.", "เปิดใน Safari แตะแชร์ แล้วเลือกเพิ่มไปยังหน้าจอโฮม ส่วน Android Chrome มีเมนูติดตั้งแอป")}</p></article>
+      <article className="panel"><ShieldCheck /><h2>{tr("Privacy and shared devices", "ความเป็นส่วนตัวและเครื่องที่ใช้ร่วมกัน")}</h2><p>{tr("Your answers are stored for your account only. On a shared computer, sync and then sign out: signing out removes your answers from this device. They are restored from the course server when you sign in again.", "คำตอบเก็บแยกตามบัญชี หากใช้เครื่องร่วมกัน ให้ sync แล้วออกจากระบบ การออกจากระบบจะลบคำตอบออกจากเครื่องนี้ และจะดึงกลับจากเซิร์ฟเวอร์เมื่อเข้าสู่ระบบอีกครั้ง")}</p>{appConfig.mode === "connected" && <button className="secondary" onClick={() => void signOut()}>{tr("Sign out", "ออกจากระบบ")}</button>}</article>
+      <article className="panel report"><CircleHelp /><h2>{tr("Report a confusing question", "แจ้งคำถามที่สับสน")}</h2><label><span>{tr("What was confusing?", "ส่วนไหนที่สับสน?")}</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={800} /></label><button className="primary" disabled={!message.trim()} onClick={submit}>{tr("Save report", "บันทึกรายงาน")}</button><small>{tr("If you are offline, the report waits on this device and is sent later for the same account.", "หากออฟไลน์ รายงานจะรอในเครื่องและส่งภายหลังสำหรับบัญชีเดียวกัน")}</small></article>
+    </div>
+    <details><summary>{tr("Support diagnostics", "ข้อมูลสำหรับฝ่ายสนับสนุน")}</summary><pre>{JSON.stringify({ mode: appConfig.mode, online: navigator.onLine, contentVersion: pelvicTraumaContent.id, eventCount: events.length, offlineState }, null, 2)}</pre></details>
+  </section>;
+}
 
 function conceptName(id: SafetyConceptId) { return { S1: "Urgent resuscitation and escalation", S2: "Binder landmark", S3: "Imaging during unresolved shock", S4: "Binder reassessment and removal", S5: "Urethral warning", S6: "Possible open injury" }[id]; }
 

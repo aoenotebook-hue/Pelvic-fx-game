@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 import { ClinicalArt } from "../art/ClinicalArt";
 import type { MiniGameSpec } from "./spec";
 import type { Language } from "../i18n";
+const unitThai: Record<string, string> = {
+  "illustration only": "ภาพประกอบเท่านั้น",
+  "mL": "มล.",
+  "min": "นาที",
+  "minutes": "นาที",
+  "%": "%",
+};
 export function GameBoard({
   spec,
   language,
@@ -100,20 +107,22 @@ export function GameBoard({
       <button
         key={card.id}
         type="button"
-        className={`game-tile ${selected(card.id) || active === card.id || found.includes(card.id) ? "chosen" : ""}`}
+        className={`game-tile ${active === card.id && !selected(card.id) ? "picked" : selected(card.id) || found.includes(card.id) ? "chosen" : ""}`}
         aria-pressed={
           selected(card.id) || active === card.id || found.includes(card.id)
         }
         aria-label={
           memory && !face
             ? t(`Memory card ${index + 1}`, `การ์ดความจำ ${index + 1}`)
-            : card.label[language]
+            : active === card.id
+              ? t(`Selected: ${card.label.en} — now choose a group`, `เลือกแล้ว: ${card.label.th} — เลือกกลุ่มต่อ`)
+              : card.label[language]
         }
         disabled={
           (memory && found.includes(card.id)) ||
           (spec.kind === "ring_trace" && trace.length !== spec.cards.length)
         }
-        draggable={!memory}
+        draggable={["card_sort", "handover_builder"].includes(spec.kind)}
         onDragStart={(event) => {
           setActive(card.id);
           event.dataTransfer.setData("text/plain", card.id);
@@ -198,7 +207,7 @@ export function GameBoard({
             {t("Your setting", "ค่าที่เลือก")}
             <output>
               {typeof answer === "number" ? answer : spec.range?.[0]}{" "}
-              {spec.unit}
+              {spec.unit ? (language === "th" ? (unitThai[spec.unit] ?? spec.unit) : spec.unit) : ""}
             </output>
             <input
               type="range"
@@ -229,14 +238,14 @@ export function GameBoard({
                         : "anatomy-marker"
                     }
                     style={{
-                      left: `${card.x ?? [25, 32, 35, 50, 50, 59][i] ?? 50}%`,
-                      top: `${card.y ?? [35, 69, 87, 38, 77, 35][i] ?? 50}%`,
+                      left: `${card.x ?? [25, 32, 35, 45, 50, 67][i] ?? 50}%`,
+                      top: `${card.y ?? [35, 69, 87, 41, 77, 33][i] ?? 50}%`,
                     }}
                     aria-label={
                       spec.order
                         ? t(
-                            `Region ${i + 1}: ${["left upper wing", "left lower ring", "anterior bridge", "central posterior bone", "midline anterior joint", "right posterior joint"][i]}`,
-                            `ตำแหน่ง ${i + 1}: ${["ปีกด้านซ้ายบน", "วงแหวนด้านซ้ายล่าง", "สะพานกระดูกด้านหน้า", "กระดูกส่วนกลางด้านหลัง", "ข้อต่อกลางด้านหน้า", "ข้อต่อด้านขวาหลัง"][i]}`,
+                            `Region ${i + 1}${["left upper wing", "left lower ring", "anterior bridge", "central posterior bone", "midline anterior joint", "right posterior joint"][i] ? `: ${["left upper wing", "left lower ring", "anterior bridge", "central posterior bone", "midline anterior joint", "right posterior joint"][i]}` : ""}`,
+                            `ตำแหน่ง ${i + 1}${["ปีกด้านซ้ายบน", "วงแหวนด้านซ้ายล่าง", "สะพานกระดูกด้านหน้า", "กระดูกส่วนกลางด้านหลัง", "ข้อต่อกลางด้านหน้า", "ข้อต่อด้านขวาหลัง"][i] ? `: ${["ปีกด้านซ้ายบน", "วงแหวนด้านซ้ายล่าง", "สะพานกระดูกด้านหน้า", "กระดูกส่วนกลางด้านหลัง", "ข้อต่อกลางด้านหน้า", "ข้อต่อด้านขวาหลัง"][i]}` : ""}`,
                           )
                         : card.label[language]
                     }

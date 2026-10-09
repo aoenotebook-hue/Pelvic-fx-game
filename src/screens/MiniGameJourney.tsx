@@ -25,12 +25,13 @@ const anchors = [
 ];
 const safetyLabels = {
   S1: ["Escalate", "เรียกทีม", "team", 2],
-  S2: ["Trochanters", "Trochanters", "binder", 3],
-  S3: ["Safe imaging", "ภาพอย่างปลอดภัย", "ct", 4],
+  S2: ["Trochanters", "ระดับ greater trochanter", "binder", 3],
+  S3: ["Safe imaging", "ส่งภาพอย่างปลอดภัย", "ct", 4],
   S4: ["Binder plan", "แผน binder", "binder", 3],
-  S5: ["GU warning", "GU warning", "foley", 5],
-  S6: ["Open injury", "Open injury", "wound", 5],
+  S5: ["GU warning", "ระวังทางเดินปัสสาวะ", "foley", 5],
+  S6: ["Open injury", "กระดูกหักแบบเปิด", "wound", 5],
 } as const;
+const directionThai: Record<string, string> = { up: "ขึ้น", down: "ลง", left: "ซ้าย", right: "ขวา" };
 export function MiniGameJourney({
   events,
   addEvent,
@@ -38,6 +39,8 @@ export function MiniGameJourney({
   partition,
   avatar,
   view,
+  navSignal = 0,
+  hubFooter,
 }: {
   events: LearningEvent[];
   addEvent(e: LearningEvent): Promise<boolean>;
@@ -45,6 +48,10 @@ export function MiniGameJourney({
   partition: string;
   avatar: { path: string; reactionSet: number };
   view: string;
+  /** Increments on every main-nav tap, so tapping the current tab still resets the screen. */
+  navSignal?: number;
+  /** Shown only on the room (hub) screen, never under a station. */
+  hubFooter?: React.ReactNode;
 }) {
   const { language } = useLanguage();
   const t = (en: string, th: string) => (language === "th" ? th : en);
@@ -86,7 +93,7 @@ export function MiniGameJourney({
           ? "summary"
           : "hub",
     );
-  }, [view]);
+  }, [view, navSignal]);
   useEffect(() => {
     if (!movementActive) { stopWalking(); return; }
     let frame = 0,
@@ -134,6 +141,10 @@ export function MiniGameJourney({
     (index < 4
       ? p.missionReviewed["mission-0"]
       : [0, 1, 2, 3].every((i) => p.missionReviewed[`mission-${i}`]));
+  const lockReason = (index: number) =>
+    index < 4
+      ? { en: `Finish ${v4CaseTitles[0].en} to unlock.`, th: `ทำ ${v4CaseTitles[0].th} ให้ครบเพื่อปลดล็อก` }
+      : { en: "Finish all four cases to unlock the final shift.", th: "ทำครบทั้ง 4 เคสเพื่อปลดล็อกเวรสุดท้าย" };
   const enter = (index: number) => {
     if (!unlocked(index)) return;
     const mission = content.missions[index];
@@ -180,6 +191,9 @@ export function MiniGameJourney({
   if (panel === "resources")
     return (
       <section className="stack">
+        <button className="quiet" onClick={() => setPanel("hub")}>
+          {t("← Emergency room", "← ห้องฉุกเฉิน")}
+        </button>
         <h1>{t("Illustrated reference inventory", "คลังบัตรอ้างอิงภาพ")}</h1>
         {content.resources
           .filter((r) => r.id !== "ORIENTATION")
@@ -242,6 +256,9 @@ export function MiniGameJourney({
   if (panel === "summary")
     return (
       <section className="stack">
+        <button className="quiet" onClick={() => setPanel("hub")}>
+          {t("← Emergency room", "← ห้องฉุกเฉิน")}
+        </button>
         <h1>{t("Your shift learning evidence", "หลักฐานการเรียนรู้ในเวร")}</h1>
         <p>
           {t(
@@ -261,7 +278,7 @@ export function MiniGameJourney({
             <strong>{p.correctedNodeIds.length}</strong>
           </article>
           <article className="metric">
-            <span>Reward</span>
+            <span>{t("Reward", "รางวัล")}</span>
             <strong>
               {reward.total}/{reward.maximum}
             </strong>
@@ -328,7 +345,9 @@ export function MiniGameJourney({
         <h2>{t("Review your handovers", "ทบทวน handovers")}</h2>
         {p.handoverNotes.map((n) => (
           <blockquote key={n.nodeId}>
-            {n.nodeId}: {n.text || t("Not yet recorded", "ยังไม่ได้บันทึก")}
+            <strong>{content.nodes.find((node) => node.id === n.nodeId)?.translation?.title[language] ?? n.nodeId}</strong>
+            {": "}
+            {n.text || t("Not yet recorded", "ยังไม่ได้บันทึก")}
           </blockquote>
         ))}
         <h2>{t("Discuss in class", "อภิปรายในชั้นเรียน")}</h2>
@@ -344,6 +363,15 @@ export function MiniGameJourney({
               {n.translation!.title[language]}: {n.translation!.key[language]}
             </p>
           ))}
+        {!p.reflection && !Object.values(p.missionReviewed).every(Boolean) && (
+          <p className="hint-line">
+            {t("To finish the shift, complete: ", "เพื่อจบเวร ต้องทำให้ครบ: ")}
+            {content.missions
+              .map((m, i) => (p.missionReviewed[m.id] ? null : v4CaseTitles[i][language]))
+              .filter(Boolean)
+              .join(", ")}
+          </p>
+        )}
         <button
           className="primary"
           disabled={
@@ -394,7 +422,7 @@ export function MiniGameJourney({
       </p>
       <div className="mini-hud">
         <strong>
-          {reward.total}/{reward.maximum} reward
+          {reward.total}/{reward.maximum} {t("reward", "รางวัล")}
         </strong>
         <span>
           {t("Outfit", "ชุด")} {reward.level}/5
@@ -476,7 +504,7 @@ export function MiniGameJourney({
               />
             )}
             <span>
-              {unlocked(i) ? (p.missionReviewed[m.id] ? "✓" : "○") : "🔒"}{" "}
+              {unlocked(i) ? (p.missionReviewed[m.id] ? "✓" : "○") : <span aria-label={t("locked", "ล็อกอยู่")}>🔒</span>}{" "}
               {v4CaseTitles[i][language]}
             </span>
           </div>
@@ -494,6 +522,13 @@ export function MiniGameJourney({
           </div>
         </div>
       </div>
+      <p className="sr-status" role="status" aria-live="polite">
+        {near.d < 19
+          ? unlocked(near.i)
+            ? t(`Near ${v4CaseTitles[near.i].en} — press Enter to open.`, `อยู่ใกล้ ${v4CaseTitles[near.i].th} — กด Enter เพื่อเปิด`)
+            : t(lockReason(near.i).en, lockReason(near.i).th)
+          : t("Walk to a patient bay.", "เดินไปที่เตียงผู้ป่วย")}
+      </p>
       <div className="mini-controls">
         <div className="dpad">
           {[
@@ -505,7 +540,7 @@ export function MiniGameJourney({
             <button
               key={direction}
               className={`secondary ${direction}`}
-              aria-label={t(`Move ${direction}`, `เดิน ${direction}`)}
+              aria-label={t(`Move ${direction}`, `เดิน${directionThai[direction as string]}`)}
               onPointerDown={(e) => {
                 e.preventDefault();
                 e.currentTarget.setPointerCapture(e.pointerId);
@@ -552,19 +587,20 @@ export function MiniGameJourney({
                 .reduce((a, b) => a + b, 0)}{" "}
               ★
             </p>
-            <button
-              className="secondary"
-              disabled={!unlocked(i)}
-              onClick={() => enter(i)}
-            >
-              {t("Accessible case shortcut", "ทางลัดสำหรับการเข้าถึง")}
-            </button>
+            {unlocked(i) ? (
+              <button className="secondary" onClick={() => enter(i)}>
+                {t(`Open ${v4CaseTitles[i].en}`, `เปิด ${v4CaseTitles[i].th}`)}
+              </button>
+            ) : (
+              <p className="hint-line">🔒 {t(lockReason(i).en, lockReason(i).th)}</p>
+            )}
           </article>
         ))}
       </div>
       <button className="secondary" onClick={() => setPanel("summary")}>
         {t("Review learning evidence", "ทบทวนหลักฐานการเรียน")}
       </button>
+      {hubFooter}
     </section>
   );
 }

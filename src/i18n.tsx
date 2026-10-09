@@ -92,8 +92,44 @@ const uiThai: Record<string, string> = {
 };
 
 export function t(text: string, language: Language) {
-  return language === "th" ? (uiThai[text] ?? text) : text;
+  return language === "th" ? (uiThai[text] ?? noticeThai[text] ?? text) : text;
 }
+
+const noticeThai: Record<string, string> = {
+  "Device storage is unavailable. Progress cannot be saved until this is resolved.": "ไม่สามารถใช้พื้นที่เก็บข้อมูลในเครื่องได้ จะบันทึกความก้าวหน้าไม่ได้จนกว่าจะแก้ไข",
+  "Not saved. Check available browser storage and try again.": "ยังไม่ได้บันทึก ตรวจสอบพื้นที่เก็บข้อมูลของเบราว์เซอร์แล้วลองใหม่",
+  "Connect to submit": "เชื่อมต่ออินเทอร์เน็ตเพื่อส่งผล",
+  "Course completion confirmed": "ยืนยันการเรียนครบแล้ว",
+  "No pending events; completion status checked.": "ไม่มีข้อมูลรอส่ง ตรวจสถานะการเรียนครบแล้ว",
+  "Demo sync checked locally; no course server was contacted.": "โหมดทดลอง: ตรวจในเครื่องเท่านั้น ไม่ได้ส่งไปเซิร์ฟเวอร์รายวิชา",
+  "Events accepted; course completion not yet confirmed.": "ส่งข้อมูลสำเร็จ ยังไม่ยืนยันการเรียนครบ",
+  "Submission did not finish. Your work remains saved on this device.": "ส่งข้อมูลไม่สำเร็จ งานของคุณยังบันทึกอยู่ในเครื่อง",
+  "Initial access and download need an internet connection.": "การเปิดครั้งแรกและการดาวน์โหลดต้องใช้อินเทอร์เน็ต",
+  "Offline files verified": "ตรวจไฟล์สำหรับใช้แบบ offline ครบแล้ว",
+  "Offline files are not fully cached. Use a production build, wait for installation and reload, then retry.": "ไฟล์ offline ยังไม่ครบ รอให้ติดตั้งเสร็จ โหลดหน้าใหม่ แล้วลองอีกครั้ง",
+  "Download incomplete. Retry when storage is available.": "ดาวน์โหลดไม่ครบ ลองใหม่เมื่อมีพื้นที่เก็บข้อมูล",
+  "Update available. Finish your current answer before refreshing.": "มีเวอร์ชันใหม่ ทำคำตอบปัจจุบันให้เสร็จก่อนโหลดหน้าใหม่",
+  "Refresh now": "โหลดใหม่ตอนนี้",
+  "DEMO · fictional records": "ทดลอง · ข้อมูลสมมติ",
+  "CONNECTED": "เชื่อมต่อรายวิชาแล้ว",
+  "not downloaded": "ยังไม่ได้ดาวน์โหลด",
+  "downloading…": "กำลังดาวน์โหลด…",
+  "ready offline": "พร้อมใช้ offline",
+  "incomplete — retry": "ไม่ครบ — ลองใหม่",
+  "Faculty": "สำหรับอาจารย์",
+  "Sign out": "ออกจากระบบ",
+};
+const PROBLEM = /^(Not saved|Device storage|Submission did not|Accepted \d+;|Download incomplete|Offline files are not|Connect to submit)/;
+/** Problems stay on screen until dismissed; information notices fade. */
+export function isProblemNotice(message: string) { return PROBLEM.test(message); }
+export function localizeNotice(message: string, language: Language) {
+  if (language !== "th") return message;
+  const accepted = message.match(/^Accepted (\d+); (\d+) waiting and (\d+) rejected/);
+  if (accepted) return `ส่งสำเร็จ ${accepted[1]} รายการ รอส่ง ${accepted[2]} รายการ ถูกปฏิเสธ ${accepted[3]} รายการ ยังไม่ยืนยันการเรียนครบ`;
+  if (message.startsWith("Not saved: ")) return `ยังไม่ได้บันทึก: ${message.slice(11)}`;
+  return noticeThai[message] ?? uiThai[message] ?? message;
+}
+
 
 const missionThai: Record<string, Pick<Mission, "title" | "entry">> = {
   "mission-1": { title: "ผู้ป่วยที่ระบบไหลเวียนไม่คงที่", entry: "ผู้ป่วยสมมติอายุ 24 ปี ประสบอุบัติเหตุรถจักรยานยนต์ 35 นาทีก่อน มีอาการปวดเชิงกราน ปลายมือเท้าเย็น HR 132/min และ BP 82/50 mmHg ทางเดินหายใจโล่ง คุณเป็นนักศึกษาแพทย์ที่ทำงานภายใต้การกำกับ และต้องระลึกว่าแหล่งเลือดออกอาจไม่ได้มีเพียงเชิงกราน" },

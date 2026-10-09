@@ -82,8 +82,8 @@
   width: 92px;
   pointer-events: none;
 }
-.game-tile.chosen,
-.chosen {
+.game-board .game-tile.chosen,
+.game-board .chosen {
   border: 3px solid #23805b !important;
   background: #dff3e8 !important;
   color: #163d30;
@@ -370,8 +370,8 @@
 .anatomy-marker {
   position: absolute;
   transform: translate(-50%, -50%);
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 44px;
+  min-height: 44px;
   border: 2px solid #2b7279;
   border-radius: 50%;
   background: #fff;
@@ -427,14 +427,14 @@
   position: relative;
   z-index: 4;
 }
-@media (max-width: 680px) {
-  .side-nav {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-  .side-nav .nav-item:nth-of-type(5) {
-    display: grid;
-  }
-  .nav-item {
-    font-size: 0.62rem;
-  }
+
+
+/* Picked-up card (waiting for a group) looks different from a placed card: dashed outline plus a label badge. */
+.game-board .game-tile.picked {
+  border: 3px dashed #5b7fd6 !important;
+  background: #eef2fd !important;
+}
+.game-board .game-tile.picked::before {
+  content: "✋";
+  margin-right: 4px;
 }
