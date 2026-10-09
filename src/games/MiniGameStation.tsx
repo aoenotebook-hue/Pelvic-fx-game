@@ -144,10 +144,13 @@ export function MiniGameStation({
     );
     return () => window.clearInterval(timer);
   }, [rush, first]);
-  const form =
+  // Post-test form alternates by learner; the pre-test always uses the other form.
+  const postForm =
     [...partition].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 2
       ? "B"
       : "A";
+  const isPretest = node.stage === "pretest";
+  const form = isPretest ? (postForm === "A" ? "B" : "A") : postForm;
   const authored = node.game!,
     spec = authored.variants?.[form] ?? authored,
     parts = spec.rounds ?? [spec],
@@ -231,13 +234,27 @@ export function MiniGameStation({
   };
   const key = node.translation!.key[language],
     why = node.translation!.why[language];
-  const showFeedback = Boolean(first && (!feedback || pendingReview));
+  const showFeedback = Boolean(first && !isPretest && (!feedback || pendingReview));
+  // Name the cards the learner got wrong, so feedback is about their answer, not generic.
+  const wrongCards = (() => {
+    const response = pendingReview ? last : first;
+    if (!response || !node.game) return [] as string[];
+    const result = evaluate(node.game, response.gameAnswer);
+    if (result.correct) return [];
+    const allCards = (spec: typeof node.game): typeof node.game.cards => [
+      ...spec.cards,
+      ...(spec.rounds ?? []).flatMap(allCards),
+      ...(spec.variants ? [...allCards(spec.variants.A), ...allCards(spec.variants.B)] : []),
+    ];
+    const labels = new Map(allCards(node.game).map((card) => [`misplaced_${card.id}`, card.label[language]]));
+    return [...new Set(result.mistakes.map((code) => labels.get(code)).filter(Boolean) as string[])];
+  })();
   return (
     <section className="mini-station stack">
       <div className="mini-story">
         <img
           src={
-            node.missionId === "mission-0"
+            node.missionId === "mission-0" || node.missionId === "mission-pre"
               ? `/assets/upgrades/character-${character}-level-1.png`
               : `/assets/patients-v2/patient-${Math.min(3, Number(node.missionId.split("-")[1]) || 1)}.png`
           }
@@ -378,6 +395,16 @@ export function MiniGameStation({
               </p>
             );
           })()}
+          {wrongCards.length > 0 && (
+            <div className="wrong-cards">
+              <strong>{t("Look again at:", "ลองดูอีกครั้ง:")}</strong>
+              <ul>
+                {wrongCards.map((label) => (
+                  <li key={label}>{label}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <h2 ref={heading} tabIndex={-1}>
             {t(
               "Key evidence → meaning → supervised action",
@@ -421,6 +448,19 @@ export function MiniGameStation({
                   "อ่านคำอธิบายการแก้ไขแล้ว",
                 )
               : t("I reviewed the evidence", "อ่านหลักฐานแล้ว")}
+          </button>
+        </article>
+      ) : first && isPretest ? (
+        <article className="game-feedback">
+          <h2 ref={heading} tabIndex={-1}>{t("Answer saved", "บันทึกคำตอบแล้ว")}</h2>
+          <p>
+            {t(
+              "Pre-test answers are not marked now. You will see your score after the last item, and every topic comes back in the cases.",
+              "คำตอบแบบทดสอบก่อนเรียนยังไม่เฉลยตอนนี้ จะเห็นคะแนนหลังข้อสุดท้าย และทุกหัวข้อจะได้ฝึกในเคส",
+            )}
+          </p>
+          <button className="primary" onClick={onNext}>
+            {node.nextNodeId ? t("Next item", "ข้อถัดไป") : t("See my pre-test score", "ดูคะแนนก่อนเรียน")}
           </button>
         </article>
       ) : first && (correct || fixed) ? (
@@ -523,7 +563,7 @@ export function MiniGameStation({
       ) : (
         <p role="status">{t("Restoring your work…", "กำลังกู้คำตอบ…")}</p>
       )}
-      <details
+      {!isPretest && node.stage !== "gauntlet" && <details
         onToggle={(event) => {
           if (event.currentTarget.open) {
             hintsUsed.current += 1;
@@ -538,7 +578,7 @@ export function MiniGameStation({
       >
         <summary>{t("Hint / reference card", "คำใบ้ / บัตรอ้างอิง")}</summary>
         <p>{key}</p>
-      </details>
+      </details>}
       {showFeedback && <FeedbackFigure node={node} />}
       <div className="source-chips">
         {node.sourceRefs?.map((ref) => (

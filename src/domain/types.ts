@@ -75,6 +75,12 @@ export interface Node {
   sourceRefs?: {doc:"S"|"H"|"LP";page:number}[];
   reviewNote?: string;
   stage?: "pretest"|"practice"|"boss"|"gauntlet";
+  /** Must be correct on the post-test (conjunctive pass standard). */
+  mustPass?: boolean;
+  /** Bloom level of the task, for item analysis. */
+  bloom?: "remember" | "understand" | "apply" | "analyse";
+  /** Newer guideline that differs from the lecture, shown to learners. */
+  guideline?: { en: string; th: string };
   translation?: {title:LocalText;story:LocalText;key:LocalText;why:LocalText};
   rationaleRequired?: boolean;
   explanationBeforeChoices?: boolean;

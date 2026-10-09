@@ -156,12 +156,12 @@ describe("mini-game draft", () => {
     });
   }
   it("validates content links, unique IDs and two or more stations per objective", () => {
-    expect(content.nodes).toHaveLength(44);
+    expect(content.nodes).toHaveLength(52);
     expect(practiceRows).toHaveLength(24);
     expect(validateContentLinks(contentVersionSchema.parse(content))).toEqual(
       [],
     );
-    expect(new Set(content.nodes.map((n) => n.id)).size).toBe(44);
+    expect(new Set(content.nodes.map((n) => n.id)).size).toBe(52);
     for (let i = 1; i <= 7; i++)
       expect(
         content.nodes.filter((n) => n.objectiveIds?.includes(`LO${i}` as never))

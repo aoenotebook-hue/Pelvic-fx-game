@@ -15,7 +15,7 @@ import { starsFor } from "../games/evaluate";
 import { createBaseEvent } from "../utils/events";
 import { miniReferences } from "../content/reference.v4";
 import { ClinicalArt } from "../art/ClinicalArt";
-import { retrievalEvidence } from "../domain/assessment";
+import { retrievalEvidence, testEvidence, POST_TEST_PASS_MARK } from "../domain/assessment";
 const anchors = [
   { x: 16, y: 76 },
   { x: 16, y: 39 },
@@ -79,6 +79,11 @@ export function MiniGameJourney({
   const p = useMemo(() => deriveProgress(content, events), [events]);
   const reward = useMemo(() => computeRewards(content, events, p), [events, p]);
   const retrieval = useMemo(() => retrievalEvidence(content, events), [events]);
+  const tests = useMemo(() => testEvidence(content, events), [events]);
+  // The pre-test is not a room bay; the five bays are the four cases plus the final shift.
+  const cases = content.missions.filter((m) => m.id !== "mission-pre");
+  const pretest = content.missions.find((m) => m.id === "mission-pre")!;
+  const pretestDone = Boolean(p.missionReviewed["mission-pre"]);
   const emit = (data: Record<string, unknown>) =>
     addEvent({
       ...createBaseEvent(attemptId, nextClientSequence(events)),
@@ -137,17 +142,20 @@ export function MiniGameJourney({
     }))
     .sort((a, b) => a.d - b.d)[0];
   const unlocked = (index: number) =>
+    !pretestDone ? false :
     index === 0 ||
     (index < 4
       ? p.missionReviewed["mission-0"]
       : [0, 1, 2, 3].every((i) => p.missionReviewed[`mission-${i}`]));
   const lockReason = (index: number) =>
-    index < 4
+    !pretestDone
+      ? { en: "Do the 8-item pre-test first.", th: "ทำแบบทดสอบก่อนเรียน 8 ข้อก่อน" }
+      : index < 4
       ? { en: `Finish ${v4CaseTitles[0].en} to unlock.`, th: `ทำ ${v4CaseTitles[0].th} ให้ครบเพื่อปลดล็อก` }
       : { en: "Finish all four cases to unlock the final shift.", th: "ทำครบทั้ง 4 เคสเพื่อปลดล็อกเวรสุดท้าย" };
   const enter = (index: number) => {
     if (!unlocked(index)) return;
-    const mission = content.missions[index];
+    const mission = cases[index];
     setNodeId(
       mission.nodeIds.find((id) => !p.clearedNodeIds.includes(id)) ??
         mission.nodeIds[0],
@@ -159,7 +167,7 @@ export function MiniGameJourney({
     if (node.nextNodeId) setNodeId(node.nextNodeId);
     else {
       setNodeId(null);
-      setPanel(node.missionId === "mission-4" ? "summary" : "hub");
+      setPanel(node.missionId === "mission-4" ? "summary" : node.missionId === "mission-pre" ? "pretest-done" : "hub");
     }
   };
   if (nodeId)
@@ -187,6 +195,24 @@ export function MiniGameJourney({
           partition={`${partition}:${attemptId}`}
         />
       </>
+    );
+  if (panel === "pretest-done")
+    return (
+      <section className="stack">
+        <h1>{t("Pre-test complete", "ทำแบบทดสอบก่อนเรียนครบแล้ว")}</h1>
+        <article className="panel test-score">
+          <strong className="big-score">{tests.pre.firstCorrect}/{tests.pre.expected}</strong>
+          <p>
+            {t(
+              "This is your starting point, not a grade. Every topic returns in the cases, and the same kind of 8 items come back at the end of the shift so you can see how much you learned.",
+              "นี่คือจุดเริ่มต้น ไม่ใช่เกรด ทุกหัวข้อจะได้ฝึกในเคส และจะมีแบบทดสอบแบบเดียวกัน 8 ข้อท้ายเวรเพื่อดูว่าเรียนรู้เพิ่มขึ้นเท่าไร",
+            )}
+          </p>
+        </article>
+        <button className="primary" onClick={() => setPanel("hub")}>
+          {t("Go to the emergency room", "ไปห้องฉุกเฉิน")}
+        </button>
+      </section>
     );
   if (panel === "resources")
     return (
@@ -284,6 +310,24 @@ export function MiniGameJourney({
             </strong>
           </article>
         </div>
+        <article className="panel test-score">
+          <h2>{t("Pre-test → post-test", "ก่อนเรียน → หลังเรียน")}</h2>
+          <p>
+            {t("Pre-test", "ก่อนเรียน")}: <strong>{tests.pre.complete ? `${tests.pre.firstCorrect}/8` : t("not done", "ยังไม่ทำ")}</strong>
+            {" → "}
+            {t("Post-test", "หลังเรียน")}: <strong>{tests.post.complete ? `${tests.post.firstCorrect}/8` : `${tests.post.answered}/8 ${t("answered", "ข้อที่ตอบ")}`}</strong>
+          </p>
+          {tests.passed !== null && (
+            <p className={tests.passed ? "result-line ok" : "result-line retry"}>
+              {tests.passed
+                ? t("Pass standard met.", "ผ่านเกณฑ์แล้ว")
+                : t(
+                    `Not yet: the standard is ${POST_TEST_PASS_MARK}/8 first try and both safety items (binder level, no Foley) correct. Review your corrections and discuss with your teacher.`,
+                    `ยังไม่ผ่าน: เกณฑ์คือถูกครั้งแรก ${POST_TEST_PASS_MARK}/8 และข้อความปลอดภัยทั้ง 2 ข้อ (ตำแหน่ง binder, ห้ามใส่ Foley) ต้องถูก ทบทวนรอบแก้ไขและปรึกษาอาจารย์`,
+                  )}
+            </p>
+          )}
+        </article>
         <article className="panel">
           <h2>{t("Final retrieval evidence", "หลักฐานทบทวนท้ายเวร")}</h2>
           <p>
@@ -334,7 +378,7 @@ export function MiniGameJourney({
             </button>
           ))}
         </div>
-        {content.missions
+        {cases
           .filter((m) => m.id !== "mission-4")
           .map((m, i) => (
             <p key={m.id}>
@@ -366,7 +410,7 @@ export function MiniGameJourney({
         {!p.reflection && !Object.values(p.missionReviewed).every(Boolean) && (
           <p className="hint-line">
             {t("To finish the shift, complete: ", "เพื่อจบเวร ต้องทำให้ครบ: ")}
-            {content.missions
+            {cases
               .map((m, i) => (p.missionReviewed[m.id] ? null : v4CaseTitles[i][language]))
               .filter(Boolean)
               .join(", ")}
@@ -408,10 +452,18 @@ export function MiniGameJourney({
       <h1>
         {t("A new shift. A different challenge.", "เวรใหม่ ความท้าทายใหม่")}
       </h1>
+      {!pretestDone && (
+        <article className="panel pretest-gate">
+          <h2>{t("Start with the 8-item pre-test", "เริ่มด้วยแบบทดสอบก่อนเรียน 8 ข้อ")}</h2>
+          <p>
+            {t(
+              "About 5 minutes. No hints, no penalty — it shows your teacher (and you) where you start.",
+              "ประมาณ 5 นาที ไม่มีคำใบ้ ไม่มีการหักคะแนน ช่วยให้อาจารย์ (และคุณ) เห็นจุดเริ่มต้น",
+            )}
       <p>
         {t(
-          "24 practice stations + four 3-card boss rounds + eight final retrieval stations. Begin at Pelvis Academy.",
-          "24 สถานีฝึก + boss 4 รอบ รอบละ 3 สถานี + ทบทวนท้ายเวร 8 สถานี เริ่มที่ Pelvis Academy",
+          "8-item pre-test → 24 practice stations + four 3-card boss rounds → 8-item post-test. Begin with the pre-test, then Pelvis Academy.",
+          "แบบทดสอบก่อนเรียน 8 ข้อ → 24 สถานีฝึก + boss 4 รอบ → แบบทดสอบหลังเรียน 8 ข้อ เริ่มจากแบบทดสอบก่อนเรียน แล้วไป Pelvis Academy",
         )}
       </p>
       <p className="draft-label">
@@ -420,6 +472,17 @@ export function MiniGameJourney({
           "ฉบับร่าง: ต้องอนุมัติเนื้อหาและภาพก่อนใช้กับนักศึกษา",
         )}
       </p>
+          </p>
+          <button
+            className="primary"
+            onClick={() => setNodeId(pretest.nodeIds.find((id) => !p.answeredNodeIds.includes(id)) ?? pretest.nodeIds[0])}
+          >
+            {p.answeredNodeIds.some((id) => pretest.nodeIds.includes(id))
+              ? t("Continue the pre-test", "ทำแบบทดสอบก่อนเรียนต่อ")
+              : t("Start the pre-test", "เริ่มแบบทดสอบก่อนเรียน")}
+          </button>
+        </article>
+      )}
       <div className="mini-hud">
         <strong>
           {reward.total}/{reward.maximum} {t("reward", "รางวัล")}
@@ -482,7 +545,7 @@ export function MiniGameJourney({
             "ห้องฉุกเฉินจำลอง ไม่มีข้อมูลผู้ป่วยจริง",
           )}
         />
-        {content.missions.map((m, i) => (
+        {cases.map((m, i) => (
           <div
             key={m.id}
             className={`mini-bay ${near.i === i && near.d < 19 ? "near" : ""}`}
@@ -568,7 +631,7 @@ export function MiniGameJourney({
         </button>
       </div>
       <div className="mission-grid">
-        {content.missions.map((m, i) => (
+        {cases.map((m, i) => (
           <article key={m.id} className="panel">
             <h3>{v4CaseTitles[i][language]}</h3>
             <p>
