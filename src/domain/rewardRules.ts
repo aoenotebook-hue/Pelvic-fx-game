@@ -7,7 +7,7 @@ export interface RewardSummary { scheme: RewardScheme; total: number; maximum: n
 const thresholdsFor = (scheme: RewardScheme,maximum=355) => scheme === "legacy-150" ? [0,30,60,90,120] : scheme==="minigames-v4"?[0,...[.16,.36,.60,.84].map(f=>Math.ceil(f*maximum))]:[0,40,90,150,210];
 export function clothingLevelFor(total: number, scheme: RewardScheme = "collections-250",maximum=355) { return thresholdsFor(scheme,maximum).filter((threshold) => total >= threshold).length || 1; }
 export function rewardLedger(input: { version: string; firstCorrect: string[]; corrected: string[]; cleared: string[]; cases: string[]; badges: string[]; completed: boolean;nodeCount?:number;caseCount?:number }): RewardSummary {
-  const scheme: RewardScheme = input.version === LEGACY_VERSION ? "legacy-150" : input.version.startsWith("ptd-minigame-")?"minigames-v4":"collections-250";
+  const scheme: RewardScheme = input.version === LEGACY_VERSION ? "legacy-150" : input.version === "ptd-minigame-draft-2026-10-07"?"minigames-v4":"collections-250";
   const maximum=scheme==="minigames-v4"?(input.nodeCount??24)*10+(input.caseCount??4)*15+30+25:scheme==="legacy-150"?150:250;
   const achievements: RewardAchievement[] = [];
   const unique = (ids: string[]) => [...new Set(ids)];

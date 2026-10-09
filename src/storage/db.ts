@@ -36,9 +36,20 @@ export function getDb() {
 
 export async function loadEvents(accountKey: string, attemptId: string): Promise<LearningEvent[]> {
   const db = await getDb();
-  return (await db.getAllFromIndex("events", "by-account-attempt", [accountKey, attemptId]))
+  const stored=await db.getAllFromIndex("events", "by-account-attempt", [accountKey, attemptId]);
+  const accepted=new Map(stored.filter(event=>event.serverReceiptTimestamp).map(event=>[event.clientSequence,event.eventId]));
+  return stored.filter(event=>event.outboxStatus!=="failed"&&(!accepted.has(event.clientSequence)||accepted.get(event.clientSequence)===event.eventId))
     .sort((a, b) => a.clientSequence - b.clientSequence)
     .map(({ accountKey: _accountKey, outboxStatus: _outboxStatus, ...event }) => event as LearningEvent);
+}
+
+/** Accepted remote events are authoritative; divergent local events remain in the outbox for review. */
+export async function importAcceptedEvents(accountKey:string, events:LearningEvent[]) {
+  const db=await getDb();const tx=db.transaction("events","readwrite");
+  for(const event of events){if(!event.serverReceiptTimestamp)continue;const existing=await tx.store.get(event.eventId);
+    if(existing&&existing.accountKey!==accountKey)throw new Error("Event partition mismatch");
+    await tx.store.put({...event,accountKey,outboxStatus:"acknowledged"});
+  }await tx.done;
 }
 
 export async function appendEventAtomically(accountKey: string, event: LearningEvent): Promise<LearningEvent> {
@@ -52,7 +63,9 @@ export async function appendEventAtomically(accountKey: string, event: LearningE
     await transaction.done.catch(()=>undefined);
     throw new Error("An event with this ID already exists with different data.");
   }
-  const previous=await transaction.objectStore("events").index("by-account-attempt").getAll([accountKey,event.attemptId]);
+  const allPrevious=await transaction.objectStore("events").index("by-account-attempt").getAll([accountKey,event.attemptId]);
+  const accepted=new Map(allPrevious.filter(item=>item.serverReceiptTimestamp).map(item=>[item.clientSequence,item.eventId]));
+  const previous=allPrevious.filter(item=>item.outboxStatus!=="failed"&&(!accepted.has(item.clientSequence)||accepted.get(item.clientSequence)===item.eventId));
   const saved=original ?? {...event,clientSequence:previous.reduce((max,item)=>Math.max(max,item.clientSequence),0)+1};
   if(!existing){const error=validateLearningSequence(saved,previous);if(error){transaction.abort();await transaction.done.catch(()=>undefined);throw new Error(error);}}
   if (!existing) await transaction.objectStore("events").add({ ...saved, accountKey, outboxStatus: "pending" } as StoredEvent);

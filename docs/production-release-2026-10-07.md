@@ -30,3 +30,16 @@ The educator reported review and requested GitHub push, production release (not 
 7. Build/stage the production version; verify sign-in → authorized attempt → response → database → faculty evidence/CSV → completion receipt. Promote only after the confirmed boundaries work.
 
 No production deployment, database migration, invitation, staff-role grant or completion receipt was performed during the preparation recorded here. See the deployment runbook for the implementation details.
+
+## Subsequent authorised setup and verification — 2026-10-07
+
+The preparation above is historical, not the current database state.
+
+- After scoped setup approval, inspected the initially empty application schema and applied all four migrations. Verified 12 application tables with RLS enabled on all 12 and four migration-history records.
+- Created course `2d82ff1d-efd9-42f1-9eb9-0c790301514b` and initial cohort `8a2510c9-737e-43ba-97cd-6f373bed43a2`. No semester, deadline or student enrollment was invented.
+- After explicit invitation/access approval, sent one instructor invitation. Verified the instructor accepted it and had a confirmed Auth account. Granted only one cohort-scoped faculty assignment; no administrator assignment or student invitation was created.
+- Re-ran `npm run check`: 179 tests across 14 files passed; TypeScript and Vite/PWA build passed. This local build is not evidence of a connected production release.
+- Dashboard inspection shows no deployed Edge Functions. The CLI deployment-access check returned `AccessTokenRequiredError`. Browser dashboard login is not CLI management authentication.
+- Backend deployment and live end-to-end verification remain blocked pending a user-completed Supabase CLI login. Do not request credentials in chat or extract dashboard session tokens. Content registration, production app configuration/staging, authenticated learner persistence/receipt tests and faculty report/export tests remain unverified. Existing production remains unchanged.
+
+For subsequent successful backend deployment and connected staging on 2026-10-08, see `backend-verification-2026-10-08.md`; it supersedes the CLI-login blocker above.

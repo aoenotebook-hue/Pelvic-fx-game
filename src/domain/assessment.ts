@@ -1,6 +1,6 @@
-import type { ContentVersion, LearningEvent } from "./types";
-import { evaluate,starsFor } from "../games/evaluate";
-import { deriveProgress } from "./engine";
+import type { ContentVersion, LearningEvent } from "./types.ts";
+import { evaluate,starsFor } from "../games/evaluate.ts";
+import { deriveProgress } from "./engine.ts";
 export const rubricDimensions = ["clinical_interpretation","priorities_supervised_action","uncertainty_request"] as const;
 export const rubricStates = ["not_observed","needs_discussion","with_prompting","without_prompting"] as const;
 export type TeacherObservation = { id:string; attemptId:string; contentVersion:string; reviewerId:string; reviewedAt:string; scope:"case"|"concept"; scopeId:string; rubric:Record<typeof rubricDimensions[number],typeof rubricStates[number]>; observation:string; feedback:string; nextStep:string };
@@ -33,6 +33,8 @@ export function retrievalEvidence(content:ContentVersion,events:LearningEvent[])
 }
 /** Pass standard: at least 6/8 first-try on the post-test AND every must-pass safety item first-try correct. */
 export const POST_TEST_PASS_MARK = 6;
+/** 75% first-try, rounded: 6 of 8, 2 of 3. */
+export const passMarkFor=(items:number)=>items===8?POST_TEST_PASS_MARK:Math.round(items*0.75);
 export function testEvidence(content:ContentVersion,events:LearningEvent[]){
  const progress=deriveProgress(content,events);
  const score=(stage:"pretest"|"gauntlet")=>{
@@ -46,7 +48,8 @@ export function testEvidence(content:ContentVersion,events:LearningEvent[]){
  const gain=pre.complete&&post.complete?post.firstCorrect-pre.firstCorrect:null;
  // Hake's normalized gain: share of the possible improvement actually achieved.
  const normalizedGain=gain===null||pre.firstCorrect===pre.expected?null:gain/(pre.expected-pre.firstCorrect);
- return {pre,post,mustPassIds,mustPassMet,gain,normalizedGain,passed:post.complete?post.firstCorrect>=POST_TEST_PASS_MARK&&mustPassMet:null};
+ const passMark=passMarkFor(post.expected);
+ return {pre,post,mustPassIds,mustPassMet,gain,normalizedGain,passMark,passed:post.complete?post.firstCorrect>=passMark&&mustPassMet:null};
 }
 export function csvText(rows:unknown[][]) {
   // Spreadsheet formula injection: text that starts (after optional spaces) with = + - @ tab or CR is prefixed with '.

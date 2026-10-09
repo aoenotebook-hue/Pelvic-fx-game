@@ -6,6 +6,7 @@ import { correctionReviewed } from "../domain/learningRules";
 import { ClinicalArt } from "../art/ClinicalArt";
 import { useLanguage } from "../i18n";
 import { getDb } from "../storage/db";
+import { getContent } from "../content/registry";
 const sourcePath = {
   S: "/resources/pelvic-fracture-medical-student-2024.pdf",
   H: "/resources/pelvic-fracture-teaching-handout-th.pdf",
@@ -18,9 +19,13 @@ export function MiniGameStation({
   onNext,
   partition,
   character = 1,
+  step,
+  totalSteps,
 }: {
   node: Node;
   character?: number;
+  step?: number;
+  totalSteps?: number;
   events: LearningEvent[];
   emit(data: Record<string, unknown>): Promise<boolean>;
   onNext(): void;
@@ -249,6 +254,7 @@ export function MiniGameStation({
     const labels = new Map(allCards(node.game).map((card) => [`misplaced_${card.id}`, card.label[language]]));
     return [...new Set(result.mistakes.map((code) => labels.get(code)).filter(Boolean) as string[])];
   })();
+  const figures = (node.visuals ?? []).filter(visual => visual.placement === (showFeedback ? "feedback" : "question")).map(visual => getContent(node.contentVersion).assets.find(asset => asset.id === visual.assetId)).filter(asset => Boolean(asset?.path));
   return (
     <section className="mini-station stack">
       <div className="mini-story">
@@ -275,6 +281,8 @@ export function MiniGameStation({
         </div>
       </div>
       <h1>{node.translation!.title[language]}</h1>
+      {figures.map(asset => <figure className="case-figure" key={asset!.id}><a href={asset!.path!} target="_blank" rel="noreferrer"><img src={asset!.path!} alt={asset!.altText} loading="lazy" /></a><figcaption>{t("Teaching example, not this patient's image. Tap to enlarge.", "ภาพตัวอย่าง ไม่ใช่ภาพผู้ป่วยเคสนี้ แตะเพื่อขยาย")} <a href={asset!.sourceUrl ?? undefined} target="_blank" rel="noreferrer">{t("Source page", "หน้าเอกสาร")}</a></figcaption></figure>)}
+      {step !== undefined && <p className="task-guide">{t(`Decision ${step} of ${totalSteps} in this case`, `การตัดสินใจ ${step} จาก ${totalSteps} ในเคสนี้`)} · {t("1 Choose → 2 Confirm → 3 Review", "1 เลือก → 2 ยืนยัน → 3 ทบทวน")}</p>}
       <div className="learner-reaction">
         <img
           src={`/assets/reactions/character-${character}-${showFeedback ? (correct ? "celebrate" : "reconsider") : first && (correct || fixed) ? "celebrate" : node.rationaleRequired ? "communicate" : node.missionId === "mission-1" ? "urgent" : "inspect"}.png`}
@@ -304,17 +312,16 @@ export function MiniGameStation({
               e.type === "core_response" &&
               e.nodeId.startsWith(node.id.slice(0, 2)),
           )
-          .map((e) => (
-            <p key={e.eventId}>
-              {e.type === "core_response" ? e.nodeId : ""} ·{" "}
-              {t("Recorded in your learning log", "บันทึกใน learning log")}
-            </p>
-          ))}
+          .map((e) => {
+            if (e.type !== "core_response" || e.nodeId === node.id) return null;
+            const earlier = getContent(node.contentVersion).nodes.find(item => item.id === e.nodeId);
+            return <p key={e.eventId}>{earlier?.translation?.story[language] ?? earlier?.stem}</p>;
+          })}
       </details>
       <p className="draft-label">
         {t(
-          "Draft teaching content • supervised student role • not a treatment order",
-          "เนื้อหาฉบับร่าง • นักศึกษาภายใต้การกำกับ • ไม่ใช่คำสั่งรักษา",
+          getContent(node.contentVersion).governance.status === "approved" ? "Educator-approved teaching • supervised student role • not a treatment order" : "Draft teaching content • supervised student role • not a treatment order",
+          getContent(node.contentVersion).governance.status === "approved" ? "เนื้อหาที่อาจารย์อนุมัติ • นักศึกษาภายใต้การกำกับ • ไม่ใช่คำสั่งรักษา" : "เนื้อหาฉบับร่าง • นักศึกษาภายใต้การกำกับ • ไม่ใช่คำสั่งรักษา",
         )}
       </p>
       {node.reviewNote && (
@@ -338,8 +345,8 @@ export function MiniGameStation({
         <>
           <label>
             {t(
-              "Before building SBAR: connect findings, priorities and uncertainty.",
-              "ก่อนจัด SBAR: เชื่อมข้อมูล ลำดับสำคัญ และความไม่แน่ชัด",
+              "Before the handover: one short reason connecting findings, priorities and uncertainty.",
+              "ก่อน handover: เหตุผลสั้น ๆ เชื่อมข้อมูล ลำดับสำคัญ และความไม่แน่ชัด",
             )}
             <textarea
               maxLength={360}

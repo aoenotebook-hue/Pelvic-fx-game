@@ -1,6 +1,6 @@
 import type { ContentVersion, DerivedProgress, LearningEvent, SafetyConceptId } from "./types.ts";
 import { correctionReviewed, handoverPrepared } from "./learningRules.ts";
-import { MINIGAME_VERSION } from "../games/spec.ts";
+import { isGameVersion } from "../games/spec.ts";
 import { evaluate } from "../games/evaluate.ts";
 
 const conceptCore: Record<SafetyConceptId, string[]> = {
@@ -59,7 +59,7 @@ export function deriveProgress(content: ContentVersion, events: LearningEvent[])
   const concepts = (Object.keys(conceptCore) as SafetyConceptId[]).map((conceptId) => {
     const teacherResult = teacher.get(conceptId);
     if (teacherResult?.result === "resolved") return { conceptId, resolved: true, route: "teacher" as const };
-    const conceptNodes=content.id===MINIGAME_VERSION?content.nodes.filter(node=>node.conceptIds.includes(conceptId)).map(node=>node.id):conceptCore[conceptId];
+    const conceptNodes=isGameVersion(content.id)?content.nodes.filter(node=>node.conceptIds.includes(conceptId)).map(node=>node.id):conceptCore[conceptId];
     const coreResolved = conceptNodes.length>0&&conceptNodes.every((nodeId) => {
       const response = core.get(nodeId);
       const node = content.nodes.find((item) => item.id === nodeId);
@@ -96,7 +96,7 @@ export function deriveProgress(content: ContentVersion, events: LearningEvent[])
     // The pre-test has no feedback or correction: it is complete once every item is answered.
     if (mission.id === "mission-pre") { missionReviewed[mission.id] = mission.nodeIds.every((nodeId) => core.has(nodeId)); continue; }
     missionReviewed[mission.id] = (revised ? mission.nodeIds.every((nodeId) => clearedNodeIds.includes(nodeId)) : mission.nodeIds.every((nodeId) => core.has(nodeId) && feedback.has(nodeId))) &&
-      (content.id === MINIGAME_VERSION ? [] : mission.nodeIds.filter((nodeId) => content.nodes.find((node) => node.id === nodeId)?.safetyFlag))
+      (isGameVersion(content.id) ? [] : mission.nodeIds.filter((nodeId) => content.nodes.find((node) => node.id === nodeId)?.safetyFlag))
         .every((nodeId) => content.nodes.find((node) => node.id === nodeId)?.conceptIds.every((conceptId) => concepts.find((item) => item.conceptId === conceptId)?.resolved));
   }
   const latestFinal = finalAttempts.at(-1);

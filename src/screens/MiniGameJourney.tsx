@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { initialWalk, stepWalk } from "../games/walking";
+import { Joystick } from "../games/Joystick";
 import {
-  pelvicTraumaContentV4 as content,
   v4CaseTitles,
   v4ResourceText,
 } from "../content/content.v4";
-import type { LearningEvent } from "../domain/types";
+import type { ContentVersion, LearningEvent } from "../domain/types";
+import { FOCUSED_VERSION } from "../games/spec";
 import { deriveProgress, nextClientSequence } from "../domain/engine";
 import { computeRewards } from "../domain/rewards";
 import { useLanguage } from "../i18n";
@@ -15,7 +16,7 @@ import { starsFor } from "../games/evaluate";
 import { createBaseEvent } from "../utils/events";
 import { miniReferences } from "../content/reference.v4";
 import { ClinicalArt } from "../art/ClinicalArt";
-import { retrievalEvidence, testEvidence, POST_TEST_PASS_MARK } from "../domain/assessment";
+import { retrievalEvidence, testEvidence } from "../domain/assessment";
 const anchors = [
   { x: 16, y: 76 },
   { x: 16, y: 39 },
@@ -33,15 +34,17 @@ const safetyLabels = {
 } as const;
 const directionThai: Record<string, string> = { up: "ขึ้น", down: "ลง", left: "ซ้าย", right: "ขวา" };
 export function MiniGameJourney({
+  content,
   events,
   addEvent,
   attemptId,
   partition,
   avatar,
   view,
-  navSignal = 0,
+  navigationRevision = 0,
   hubFooter,
 }: {
+  content: ContentVersion;
   events: LearningEvent[];
   addEvent(e: LearningEvent): Promise<boolean>;
   attemptId: string;
@@ -49,12 +52,15 @@ export function MiniGameJourney({
   avatar: { path: string; reactionSet: number };
   view: string;
   /** Increments on every main-nav tap, so tapping the current tab still resets the screen. */
-  navSignal?: number;
+  navigationRevision?: number;
   /** Shown only on the room (hub) screen, never under a station. */
   hubFooter?: React.ReactNode;
 }) {
   const { language } = useLanguage();
   const t = (en: string, th: string) => (language === "th" ? th : en);
+  const focused = content.id === FOCUSED_VERSION;
+  const roomAnchors = focused ? [anchors[1], anchors[2], anchors[3]] : anchors;
+  const caseTitle = (index: number) => v4CaseTitles[focused ? index + 1 : index][language];
   const [nodeId, setNodeId] = useState<string | null>(null),
     [position, setPosition] = useState(initialWalk),
     [walking, setWalking] = useState(false),
@@ -62,6 +68,7 @@ export function MiniGameJourney({
   const held = useRef(new Set<string>()),
     room = useRef<HTMLDivElement>(null);
   const motion = useRef(initialWalk);
+  const analog=useRef({x:0,y:0});
   const taps = useRef(new Map<string, number>());
   const movementActive = !nodeId && panel === "hub";
   const startWalking = (key: string) => {
@@ -69,21 +76,21 @@ export function MiniGameJourney({
     taps.current.set(key, performance.now() + 85);
   };
   const stopWalking = () => {
-    held.current.clear(); taps.current.clear();
+    held.current.clear(); taps.current.clear();analog.current={x:0,y:0};
     motion.current = { ...motion.current, vx: 0, vy: 0 };
     setWalking(false);
   };
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [nodeId, panel]);
-  const p = useMemo(() => deriveProgress(content, events), [events]);
-  const reward = useMemo(() => computeRewards(content, events, p), [events, p]);
-  const retrieval = useMemo(() => retrievalEvidence(content, events), [events]);
-  const tests = useMemo(() => testEvidence(content, events), [events]);
-  // The pre-test is not a room bay; the five bays are the four cases plus the final shift.
+  const p = useMemo(() => deriveProgress(content, events), [content, events]);
+  const reward = useMemo(() => computeRewards(content, events, p), [content, events, p]);
+  const retrieval = useMemo(() => retrievalEvidence(content, events), [content, events]);
+  const tests = useMemo(() => testEvidence(content, events), [content, events]);
+  // The pre-test is not a room bay; the bays are the cases (plus the final shift in the full edition).
   const cases = content.missions.filter((m) => m.id !== "mission-pre");
-  const pretest = content.missions.find((m) => m.id === "mission-pre")!;
-  const pretestDone = Boolean(p.missionReviewed["mission-pre"]);
+  const pretest = content.missions.find((m) => m.id === "mission-pre");
+  const pretestDone = !pretest || Boolean(p.missionReviewed["mission-pre"]);
   const emit = (data: Record<string, unknown>) =>
     addEvent({
       ...createBaseEvent(attemptId, nextClientSequence(events)),
@@ -98,7 +105,7 @@ export function MiniGameJourney({
           ? "summary"
           : "hub",
     );
-  }, [view, navSignal]);
+  }, [view, navigationRevision]);
   useEffect(() => {
     if (!movementActive) { stopWalking(); return; }
     let frame = 0,
@@ -112,7 +119,7 @@ export function MiniGameJourney({
       }
       const bounds = room.current?.getBoundingClientRect();
       const before = motion.current;
-      const next = stepWalk(before, keys, dt, bounds?.width ?? 0, bounds?.height ?? 0);
+      const next = stepWalk(before, keys, dt, bounds?.width ?? 0, bounds?.height ?? 0,analog.current);
       motion.current = next;
       const moving = Math.hypot(next.vx, next.vy) > 2;
       setWalking(moving);
@@ -135,7 +142,7 @@ export function MiniGameJourney({
       held.current.clear(); taps.current.clear();
     };
   }, [movementActive]);
-  const near = anchors
+  const near = roomAnchors
     .map((a, i) => ({
       i,
       d: Math.hypot(a.x - position.x, (a.y - position.y) * 0.75),
@@ -143,13 +150,15 @@ export function MiniGameJourney({
     .sort((a, b) => a.d - b.d)[0];
   const unlocked = (index: number) =>
     !pretestDone ? false :
-    index === 0 ||
+    (focused ? index === 0 || Boolean(p.missionReviewed[cases[index - 1].id]) : index === 0 ||
     (index < 4
       ? p.missionReviewed["mission-0"]
-      : [0, 1, 2, 3].every((i) => p.missionReviewed[`mission-${i}`]));
+      : [0, 1, 2, 3].every((i) => p.missionReviewed[`mission-${i}`])));
   const lockReason = (index: number) =>
     !pretestDone
-      ? { en: "Do the 8-item pre-test first.", th: "ทำแบบทดสอบก่อนเรียน 8 ข้อก่อน" }
+      ? { en: `Do the ${tests.pre.expected}-item pre-test first.`, th: `ทำแบบทดสอบก่อนเรียน ${tests.pre.expected} ข้อก่อน` }
+      : focused
+      ? { en: "Finish the previous case to unlock.", th: "ทำเคสก่อนหน้าให้ครบเพื่อปลดล็อก" }
       : index < 4
       ? { en: `Finish ${v4CaseTitles[0].en} to unlock.`, th: `ทำ ${v4CaseTitles[0].th} ให้ครบเพื่อปลดล็อก` }
       : { en: "Finish all four cases to unlock the final shift.", th: "ทำครบทั้ง 4 เคสเพื่อปลดล็อกเวรสุดท้าย" };
@@ -167,7 +176,7 @@ export function MiniGameJourney({
     if (node.nextNodeId) setNodeId(node.nextNodeId);
     else {
       setNodeId(null);
-      setPanel(node.missionId === "mission-4" ? "summary" : node.missionId === "mission-pre" ? "pretest-done" : "hub");
+      setPanel(node.missionId === "mission-pre" ? "pretest-done" : node.missionId === cases.at(-1)?.id ? "summary" : "hub");
     }
   };
   if (nodeId)
@@ -189,6 +198,8 @@ export function MiniGameJourney({
           character={avatar.reactionSet}
           key={nodeId}
           node={content.nodes.find((n) => n.id === nodeId)!}
+          step={content.missions.find(m => m.id === content.nodes.find(n => n.id === nodeId)!.missionId)!.nodeIds.indexOf(nodeId) + 1}
+          totalSteps={content.missions.find(m => m.id === content.nodes.find(n => n.id === nodeId)!.missionId)!.nodeIds.length}
           events={events}
           emit={emit}
           onNext={advance}
@@ -310,25 +321,25 @@ export function MiniGameJourney({
             </strong>
           </article>
         </div>
-        <article className="panel test-score">
+        {tests.post.expected > 0 && <article className="panel test-score">
           <h2>{t("Pre-test → post-test", "ก่อนเรียน → หลังเรียน")}</h2>
           <p>
-            {t("Pre-test", "ก่อนเรียน")}: <strong>{tests.pre.complete ? `${tests.pre.firstCorrect}/8` : t("not done", "ยังไม่ทำ")}</strong>
+            {t("Pre-test", "ก่อนเรียน")}: <strong>{tests.pre.complete ? `${tests.pre.firstCorrect}/${tests.pre.expected}` : t("not done", "ยังไม่ทำ")}</strong>
             {" → "}
-            {t("Post-test", "หลังเรียน")}: <strong>{tests.post.complete ? `${tests.post.firstCorrect}/8` : `${tests.post.answered}/8 ${t("answered", "ข้อที่ตอบ")}`}</strong>
+            {t("Post-test", "หลังเรียน")}: <strong>{tests.post.complete ? `${tests.post.firstCorrect}/${tests.post.expected}` : `${tests.post.answered}/${tests.post.expected} ${t("answered", "ข้อที่ตอบ")}`}</strong>
           </p>
           {tests.passed !== null && (
             <p className={tests.passed ? "result-line ok" : "result-line retry"}>
               {tests.passed
                 ? t("Pass standard met.", "ผ่านเกณฑ์แล้ว")
                 : t(
-                    `Not yet: the standard is ${POST_TEST_PASS_MARK}/8 first try and both safety items (binder level, no Foley) correct. Review your corrections and discuss with your teacher.`,
-                    `ยังไม่ผ่าน: เกณฑ์คือถูกครั้งแรก ${POST_TEST_PASS_MARK}/8 และข้อความปลอดภัยทั้ง 2 ข้อ (ตำแหน่ง binder, ห้ามใส่ Foley) ต้องถูก ทบทวนรอบแก้ไขและปรึกษาอาจารย์`,
+                    `Not yet: the standard is ${tests.passMark}/${tests.post.expected} first try and every safety item (binder level, no Foley) correct. Review your corrections and discuss with your teacher.`,
+                    `ยังไม่ผ่าน: เกณฑ์คือถูกครั้งแรก ${tests.passMark}/${tests.post.expected} และข้อความปลอดภัย (ตำแหน่ง binder, ห้ามใส่ Foley) ต้องถูกทุกข้อ ทบทวนรอบแก้ไขและปรึกษาอาจารย์`,
                   )}
             </p>
           )}
-        </article>
-        <article className="panel">
+        </article>}
+        {!focused&&<article className="panel">
           <h2>{t("Final retrieval evidence", "หลักฐานทบทวนท้ายเวร")}</h2>
           <p>
             {retrieval.firstScore === null
@@ -351,7 +362,7 @@ export function MiniGameJourney({
               "ใช้กำหนดการอภิปราย ไม่ใช่ grade competence",
             )}
           </small>
-        </article>
+        </article>}
         <div className="badge-collection">
           {p.concepts.map((c) => (
             <button
@@ -382,10 +393,10 @@ export function MiniGameJourney({
           .filter((m) => m.id !== "mission-4")
           .map((m, i) => (
             <p key={m.id}>
-              {p.missionReviewed[m.id] ? "✦" : "○"} {v4CaseTitles[i][language]}
+              {p.missionReviewed[m.id] ? "✦" : "○"} {caseTitle(i)}
             </p>
           ))}
-        <RewardPodium complete={p.locallyComplete} reward={reward.total} />
+        <RewardPodium contentVersion={content.id} complete={p.locallyComplete} reward={reward.total} />
         <h2>{t("Review your handovers", "ทบทวน handovers")}</h2>
         {p.handoverNotes.map((n) => (
           <blockquote key={n.nodeId}>
@@ -479,16 +490,17 @@ export function MiniGameJourney({
       )}
       <p>
         {t(
-          "8-item pre-test → 24 practice stations + four 3-card boss rounds → 8-item post-test. Begin with the pre-test, then Pelvis Academy.",
-          "แบบทดสอบก่อนเรียน 8 ข้อ → 24 สถานีฝึก + boss 4 รอบ → แบบทดสอบหลังเรียน 8 ข้อ เริ่มจากแบบทดสอบก่อนเรียน แล้วไป Pelvis Academy",
+          focused ? `${tests.pre.expected}-item pre-test → 3 patients, 15 team decisions → ${tests.post.expected}-item post-test. Choose an action, review feedback, then continue.` : "8-item pre-test → 24 practice stations + four 3-card boss rounds → 8-item post-test. Begin with the pre-test, then Pelvis Academy.",
+          focused ? `แบบทดสอบก่อนเรียน ${tests.pre.expected} ข้อ → ผู้ป่วย 3 เคส ตัดสินใจร่วมทีม 15 ครั้ง → แบบทดสอบหลังเรียน ${tests.post.expected} ข้อ เลือก action อ่าน feedback แล้วไปต่อ` : "แบบทดสอบก่อนเรียน 8 ข้อ → 24 สถานีฝึก + boss 4 รอบ → แบบทดสอบหลังเรียน 8 ข้อ เริ่มจากแบบทดสอบก่อนเรียน แล้วไป Pelvis Academy",
         )}
       </p>
       <p className="draft-label">
         {t(
-          "Draft: clinical and image approval required before student delivery.",
-          "ฉบับร่าง: ต้องอนุมัติเนื้อหาและภาพก่อนใช้กับนักศึกษา",
+          content.governance.status === "approved" ? "Educator-approved learning activity. Work with your senior team; not a treatment order." : "Draft: clinical and image approval required before student delivery.",
+          content.governance.status === "approved" ? "กิจกรรมการเรียนที่อาจารย์อนุมัติ ทำงานร่วมทีมอาวุโส ไม่ใช่คำสั่งรักษา" : "ฉบับร่าง: ต้องอนุมัติเนื้อหาและภาพก่อนใช้กับนักศึกษา",
         )}
       </p>
+      {focused && <article className="next-task panel"><strong>{t("Next task", "ทำต่อไป")}</strong><p>{Object.values(p.missionReviewed).every(Boolean) ? t("Review your three handovers, then finish shift.", "ทบทวน handover ทั้ง 3 เคส แล้วจบเวร") : caseTitle(Math.max(0, content.missions.findIndex(m => !p.missionReviewed[m.id])))}</p><button className="primary" onClick={() => {const index=content.missions.findIndex(m=>!p.missionReviewed[m.id]);if(index<0)setPanel("summary");else enter(index);}}>{t(p.answeredNodeIds.length ? "Continue your shift" : "Start first patient", p.answeredNodeIds.length ? "เล่นเวรต่อ" : "เริ่มผู้ป่วยรายแรก")}</button></article>}
       <div className="mini-hud">
         <strong>
           {reward.total}/{reward.maximum} {t("reward", "รางวัล")}
@@ -555,11 +567,11 @@ export function MiniGameJourney({
           <div
             key={m.id}
             className={`mini-bay ${near.i === i && near.d < 19 ? "near" : ""}`}
-            style={{ left: `${anchors[i].x}%`, top: `${anchors[i].y}%` }}
+            style={{ left: `${roomAnchors[i].x}%`, top: `${roomAnchors[i].y}%` }}
           >
-            {i > 0 && i < 4 ? (
+            {focused || (i > 0 && i < 4) ? (
               <img
-                src={`/assets/patients-v2/patient-${i}.png`}
+                src={`/assets/patients-v2/patient-${focused ? i + 1 : i}.png`}
                 alt={t(
                   "Fictional covered patient supported on the bed",
                   "ผู้ป่วยจำลองมีผ้าคลุมและนอนบนเตียง",
@@ -569,12 +581,12 @@ export function MiniGameJourney({
               <ClinicalArt
                 kind={i === 0 ? "pelvis" : "team"}
                 size={65}
-                ariaLabel={v4CaseTitles[i][language]}
+                ariaLabel={caseTitle(i)}
               />
             )}
             <span>
               {unlocked(i) ? (p.missionReviewed[m.id] ? "✓" : "○") : <span aria-label={t("locked", "ล็อกอยู่")}>🔒</span>}{" "}
-              {v4CaseTitles[i][language]}
+              {caseTitle(i)}
             </span>
           </div>
         ))}
@@ -599,47 +611,19 @@ export function MiniGameJourney({
           : t("Walk to a patient bay.", "เดินไปที่เตียงผู้ป่วย")}
       </p>
       <div className="mini-controls">
-        <div className="dpad">
-          {[
-            ["up", 0, -5, "↑"],
-            ["left", -5, 0, "←"],
-            ["down", 0, 5, "↓"],
-            ["right", 5, 0, "→"],
-          ].map(([direction, , , symbol]) => (
-            <button
-              key={direction}
-              className={`secondary ${direction}`}
-              aria-label={t(`Move ${direction}`, `เดิน${directionThai[direction as string]}`)}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.currentTarget.setPointerCapture(e.pointerId);
-                startWalking(`arrow${direction}`);
-              }}
-              onPointerUp={() => held.current.delete(`arrow${direction}`)}
-              onPointerCancel={() => { held.current.delete(`arrow${direction}`); taps.current.delete(`arrow${direction}`); }}
-              onLostPointerCapture={() =>
-                held.current.delete(`arrow${direction}`)
-              }
-              onClick={(e) => {
-                if (e.detail === 0) taps.current.set(`arrow${direction}`, performance.now() + 140);
-              }}
-            >
-              {symbol}
-            </button>
-          ))}
-        </div>
+        <Joystick label={t("Movement joystick. Arrow keys or WASD also move.","จอยสติ๊กเดิน ใช้ปุ่มลูกศรหรือ WASD ได้เช่นกัน")} onMove={vector=>{analog.current=vector;if(!vector.x&&!vector.y)stopWalking();}} />
         <button
           className="primary"
           disabled={near.d >= 19 || !unlocked(near.i)}
           onClick={() => enter(near.i)}
         >
-          {t("Enter case", "เข้าเคส")} · {v4CaseTitles[near.i][language]}
+          {t("Enter case", "เข้าเคส")} · {caseTitle(near.i)}
         </button>
       </div>
       <div className="mission-grid">
         {cases.map((m, i) => (
           <article key={m.id} className="panel">
-            <h3>{v4CaseTitles[i][language]}</h3>
+            <h3>{caseTitle(i)}</h3>
             <p>
               {p.clearedNodeIds.filter((id) => m.nodeIds.includes(id)).length}/
               {m.nodeIds.length}
@@ -658,7 +642,7 @@ export function MiniGameJourney({
             </p>
             {unlocked(i) ? (
               <button className="secondary" onClick={() => enter(i)}>
-                {t(`Open ${v4CaseTitles[i].en}`, `เปิด ${v4CaseTitles[i].th}`)}
+                {focused ? t(p.missionReviewed[m.id] ? "Review case" : "Continue case", p.missionReviewed[m.id] ? "ทบทวนเคส" : "เล่นเคสต่อ") : t(`Open ${v4CaseTitles[i].en}`, `เปิด ${v4CaseTitles[i].th}`)}
               </button>
             ) : (
               <p className="hint-line">🔒 {t(lockReason(i).en, lockReason(i).th)}</p>

@@ -10,8 +10,8 @@ const fail = (message: string, status = 400) => Response.json({ error: message }
 export default {
   fetch: withCors(withSupabase({ auth: "user" }, async (request, ctx) => {
     if (request.method !== "POST") return fail("Method not allowed", 405);
-    let body: { courseId?: string; contentVersion?: string };
-    try { body = await request.json(); } catch { return fail("Invalid JSON"); }
+    let body:{ courseId?: string; contentVersion?: string };try{body=await request.json();}catch{return fail("Invalid JSON");}
+    if(!body||typeof body!=="object"||Array.isArray(body))return fail("Invalid request");
     const userId = ctx.userClaims?.id;
     if (!userId || !body.courseId || !body.contentVersion || !supportedVersion(body.contentVersion)) return fail("Invalid request");
 

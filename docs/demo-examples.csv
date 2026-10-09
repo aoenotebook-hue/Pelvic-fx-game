@@ -1,0 +1,7 @@
+﻿"Record ID","Label","Fictional ID","Scenario","First correct","Answered","Corrected","Unresolved","Missing","Reward","Complete","Interpretation"
+"ptd:demo:registered_not_started","DEMO","DEMO-001","registered_not_started","0","0","0","0","15","0","false","Fictional learning evidence; excluded from real class totals. Discuss reasoning in class; rewards do not establish competence."
+"ptd:demo:incomplete","DEMO","DEMO-002","incomplete","3","3","0","0","12","40","false","Fictional learning evidence; excluded from real class totals. Discuss reasoning in class; rewards do not establish competence."
+"ptd:demo:unresolved","DEMO","DEMO-003","unresolved","0","1","0","1","14","0","false","Fictional learning evidence; excluded from real class totals. Discuss reasoning in class; rewards do not establish competence."
+"ptd:demo:all_first_correct","DEMO","DEMO-004","all_first_correct","15","15","0","0","0","250","true","Fictional learning evidence; excluded from real class totals. Discuss reasoning in class; rewards do not establish competence."
+"ptd:demo:all_corrected","DEMO","DEMO-005","all_corrected","0","15","15","0","0","220","true","Fictional learning evidence; excluded from real class totals. Discuss reasoning in class; rewards do not establish competence."
+"ptd:demo:mixed_corrected","DEMO","DEMO-006","mixed_corrected","10","15","5","0","0","240","true","Fictional learning evidence; excluded from real class totals. Discuss reasoning in class; rewards do not establish competence."

@@ -1,6 +1,8 @@
 import { z } from "zod";
 export type LOId = "LO1" | "LO2" | "LO3" | "LO4" | "LO5" | "LO6" | "LO7";
 export const MINIGAME_VERSION = "ptd-minigame-draft-2026-10-07";
+export const FOCUSED_VERSION = "ptd-minigame-focused-2026-10-08";
+export const isGameVersion = (version: string) => [MINIGAME_VERSION, FOCUSED_VERSION].includes(version);
 export type LocalText = { en: string; th: string };
 export const textSchema = z.object({
   en: z.string().min(1),

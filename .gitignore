@@ -12,3 +12,4 @@ test-results
 coverage
 *.local
 .vercel
+supabase/.temp/
