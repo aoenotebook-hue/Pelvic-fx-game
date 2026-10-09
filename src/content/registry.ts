@@ -3,10 +3,11 @@ import { pelvicTraumaContentV2 } from "./content.v2.ts";
 import { pelvicTraumaContentV3 } from "./content.v3.ts";
 import { pelvicTraumaContentV4 } from "./content.v4.ts";
 import { pelvicTraumaContentV5 } from "./content.v5.ts";
+import { pelvicTraumaContentV6 } from "./content.v6.ts";
 import type { ContentVersion } from "../domain/types.ts";
 
-export const contentVersions = new Map([legacy, pelvicTraumaContentV2, pelvicTraumaContentV3, pelvicTraumaContentV4, pelvicTraumaContentV5].map((content) => [content.id, content]));
-export const latestContent = pelvicTraumaContentV5;
+export const contentVersions = new Map([legacy, pelvicTraumaContentV2, pelvicTraumaContentV3, pelvicTraumaContentV4, pelvicTraumaContentV5, pelvicTraumaContentV6].map((content) => [content.id, content]));
+export const latestContent = pelvicTraumaContentV6;
 export function getContent(version: string): ContentVersion {
   const content = contentVersions.get(version);
   if (!content) throw new Error(`Unsupported content version: ${version}`);

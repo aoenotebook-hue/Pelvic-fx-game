@@ -60,4 +60,33 @@ export class GoogleWorkbook {
   const priorities=`=IFERROR(QUERY('Decision Evidence'!A1:T10000,"select Q, count(Q) where S = 'reporting' and (J = 'corrected' or J = 'unresolved') and Q is not null"&IF($B$2="",""," and F >= '"&$B$2&"'")&IF($B$3="",""," and F <= '"&$B$3&"'")&IF($B$4="",""," and D = '"&$B$4&"'")&IF($B$5="",""," and E = '"&$B$5&"'")&" group by Q order by count(Q) desc label Q 'Discussion priority', count(Q) 'First responses needing discussion'",1),"No matching misconceptions recorded")`;
   await this.api("/values:batchUpdate","POST",{valueInputOption:"USER_ENTERED",data:[{range:"'Class Overview'!A20",values:[[priorities]]}]});
  }
+ /** Evaluation tabs (medical-education analysis): created if missing and fully rewritten on each sync. */
+ async ensureEvaluationTabs(titles:readonly string[],teacherTabs:ReadonlyArray<{name:string;headers:readonly string[]}>){
+  const metadata=await this.api("?fields=sheets(properties,developerMetadata)");const sheets=metadata.sheets??[];const requests:unknown[]=[];const headerWrites:Array<{range:string;values:SheetRow[]}>=[];
+  const owned=(sheet:{developerMetadata?:Array<{metadataKey:string;metadataValue:string}>})=>sheet.developerMetadata?.some(m=>m.metadataKey==="ptd_owner"&&m.metadataValue==="pelvic-trauma-evaluation-v1");
+  const all=[...titles.map(title=>({title,teacher:false,headers:[] as readonly string[]})),...teacherTabs.map(tab=>({title:tab.name,teacher:true,headers:tab.headers}))];
+  for(const [index,tab] of all.entries()){
+   const existing=sheets.find((sheet:{properties:{title:string}})=>sheet.properties.title===tab.title);
+   // A tab the teacher made with the same name is never overwritten; teacher tabs are only created when missing.
+   if(existing){if(!tab.teacher&&!owned(existing))throw new Error(`Existing tab '${tab.title}' is not application-managed; rename it so the evaluation tabs can be created`);continue;}
+   const sheetId=720000+index;if(sheets.some((sheet:{properties:{sheetId:number}})=>sheet.properties.sheetId===sheetId))throw new Error("Managed sheet ID collision");
+   requests.push({addSheet:{properties:{sheetId,title:tab.title,gridProperties:{rowCount:10000,columnCount:40,frozenRowCount:1}}}},{createDeveloperMetadata:{developerMetadata:{metadataKey:"ptd_owner",metadataValue:"pelvic-trauma-evaluation-v1",visibility:"DOCUMENT",location:{sheetId}}}},{repeatCell:{range:{sheetId,startRowIndex:0,endRowIndex:1},cell:{userEnteredFormat:{backgroundColor:{red:.12,green:.28,blue:.4},textFormat:{bold:true,foregroundColor:{red:1,green:1,blue:1}}}},fields:"userEnteredFormat(backgroundColor,textFormat)"}});
+   if(tab.teacher)headerWrites.push({range:`'${tab.title.replaceAll("'","''")}'!A1`,values:[[...tab.headers]]});
+  }
+  if(requests.length)await this.api(":batchUpdate","POST",{requests});
+  if(headerWrites.length)await this.api("/values:batchUpdate","POST",{valueInputOption:"RAW",data:headerWrites});
+ }
+ async read(range:string){const data=await this.api(`/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE`);return (data.values??[]) as unknown[][];}
+ /** Clears and rewrites a generated tab. RAW keeps leading-zero IDs as text; only listed formula cells are interpreted. */
+ async replace(title:string,rows:SheetRow[],formulaCells:Array<{row:number;col:number}>=[]){
+  const prefix=`'${title.replaceAll("'","''")}'!`;
+  await this.api("/values:batchClear","POST",{ranges:[prefix+"A1:AN10000"]});
+  if(rows.length>10000)throw new Error(`Workbook tab '${title}' exceeds configured row capacity`);
+  const data:Array<{range:string;values:SheetRow[]}>=[];
+  for(let offset=0;offset<rows.length;offset+=500)data.push({range:prefix+`A${offset+1}`,values:rows.slice(offset,offset+500).map(row=>row.map(cell=>typeof cell==="string"?safeSheetCell(cell):cell))});
+  for(let offset=0;offset<data.length;offset+=20)await this.api("/values:batchUpdate","POST",{valueInputOption:"RAW",data:data.slice(offset,offset+20)});
+  const formulas=formulaCells.map(cell=>({range:prefix+`${String.fromCharCode(65+cell.col)}${cell.row+1}`,values:[[rows[cell.row][cell.col]]]}));
+  if(formulas.length)await this.api("/values:batchUpdate","POST",{valueInputOption:"USER_ENTERED",data:formulas});
+ }
+ async append(title:string,rows:SheetRow[]){if(!rows.length)return;await this.api(`/values/${encodeURIComponent(`'${title.replaceAll("'","''")}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,"POST",{values:rows.map(row=>row.map(cell=>typeof cell==="string"?safeSheetCell(cell):cell))});}
 }

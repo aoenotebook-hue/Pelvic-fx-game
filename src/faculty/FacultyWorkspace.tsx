@@ -11,6 +11,8 @@ import { correctionReviewed } from "../domain/learningRules";
 import { appConfig } from "../config";
 import { getDb } from "../storage/db";
 import { useLanguage, localizeNode } from "../i18n";
+import { csvText } from "../domain/assessment";
+import { buildEvaluationWorkbook, EVALUATION_TABS, tabValues } from "../domain/evaluationExport";
 const adapter = createBackendAdapter();
 const emptyRubric = () => Object.fromEntries(rubricDimensions.map(id => [id, "not_observed"])) as TeacherObservation["rubric"];
 
@@ -86,6 +88,8 @@ export function FacultyWorkspace({ events, attemptId }: { events: LearningEvent[
       <details className="panel"><summary>{t("Clinical review notes", "หมายเหตุทบทวนเนื้อหา")}</summary>{content.nodes.filter(n => n.reviewNote).map(n => <p key={n.id}>{n.id}: {n.reviewNote}</p>)}</details>
     </>}
     {rangeValid && tab === "exports" && <article className="panel"><h2>{t("Export this date range", "ส่งออกช่วงวันที่นี้")}</h2><p>{t("CSV opens in Excel and includes your date range and content version. Automatic Google Sheets delivery is separate; check its status above.", "CSV เปิดใน Excel ได้ พร้อมช่วงวันที่และเวอร์ชันเนื้อหา การส่ง Google Sheets อัตโนมัติเป็นอีกระบบ ตรวจสถานะด้านบน")}</p><div className="button-row">{(["summary", "evidence", "reviews", "objectives"] as const).map(kind => <button className="secondary" key={kind} disabled={state === "loading" || state === "error"} onClick={() => download(kind)}>{({ summary: t("Export cohort CSV", "ส่งออกสรุป CSV"), evidence: t("Export evidence CSV", "ส่งออกหลักฐาน CSV"), reviews: t("Export reviews CSV", "ส่งออก review CSV"), objectives: t("Export objective CSV", "ส่งออก objective CSV") })[kind]}</button>)}<button className="secondary" disabled={state === "loading" || state === "error"} onClick={() => {setTab("overview");requestAnimationFrame(() => { document.body.classList.add("print-class-briefing"); window.print(); document.body.classList.remove("print-class-briefing"); }); }}>{t("Print anonymous briefing", "พิมพ์ประเด็นอภิปรายไม่ระบุตัวตน")}</button></div></article>}
+    {appConfig.mode === "connected" && tab === "individual" && <ResetStudentCode />}
+    {rangeValid && tab === "exports" && <EvaluationExport attempts={attempts} roster={roster} reviews={reviews} />}
     {rangeValid && tab === "individual" && <>
       <article className="panel staff-private"><h2>{t("Individual evidence", "หลักฐานรายบุคคล")}</h2><label>{t("Learner attempt", "Attempt นักศึกษา")}<select value={active?.attemptId ?? ""} onChange={e => setSelected(e.target.value)}><option value="">{t("Choose an attempt", "เลือก attempt")}</option>{report.visibleAttempts.map(a => <option key={a.attemptId} value={a.attemptId}>{a.learnerId} · {a.reportingStatus} · {a.contentVersion}</option>)}</select></label>{!active && <p>{t("No attempt matches. Try all dates or another version.", "ไม่มี attempt ตรงตัวกรอง ลองทุกวันที่หรือเวอร์ชันอื่น")}</p>}
         {entries.map(({ node, response, state: evidenceState, corrections, references }) => { const localized = localizeNode(node, language), answer = node.game?.cards.filter(card => Array.isArray(response?.gameAnswer) ? response.gameAnswer.includes(card.id) : response?.gameAnswer === card.id).map(card => card.label[language]).join("; "); return <details key={node.id}><summary>{node.id} · {({ missing: t("Missing evidence", "ยังไม่มีหลักฐาน"), first_correct: t("First correct", "ถูกครั้งแรก"), corrected: t("Corrected", "แก้ไขแล้ว"), unresolved: t("Needs correction", "ต้องแก้ไข") })[evidenceState]}</summary><p>{node.translation?.story[language] ?? localized.stem}</p><p>{node.translation?.title[language] ?? localized.question}</p><p>{t("Selected answer", "คำตอบที่เลือก")}: {answer || (node.game ? JSON.stringify(response?.gameAnswer ?? null) : localized.options.filter(o => response?.selectedOptionIds.includes(o.id)).map(o => o.text).join("; ")) || t("Not observed", "ยังไม่มีหลักฐาน")}</p><p>{t("Reason", "เหตุผล")}: {response?.rationale ?? t("Not provided", "ไม่ได้ระบุ")}</p><p>{t("Confidence", "Confidence")}: {response?.confidence ?? t("Optional — not provided", "ไม่บังคับ ไม่ได้ระบุ")}</p><p>{t("Expected teaching point", "ประเด็นสอน")}: {node.translation?.key[language] ?? localized.teaching?.keyMessage}</p><p>{t("Discussion", "คำถามอภิปราย")}: {localized.teaching?.discussionPrompt}</p><p>{t("Suggested advice", "คำแนะนำที่เสนอ")}: {localized.teaching?.suggestedFeedback}</p><p>{t("Corrections", "Corrections")}: {corrections.map(e => e.type === "correction_response" ? `${JSON.stringify(e.gameAnswer ?? e.selectedOptionId)} · ${correctionReviewed(active!.events, e) ? t("explanation reviewed", "ทบทวนแล้ว") : t("review pending", "รอทบทวน")}` : "").join("; ") || t("None", "ไม่มี")}</p><p>{t("Reference use", "การใช้บัตรอ้างอิง")}: {references.map(e => e.type === "resource_viewed" ? `${e.resourceId} (${e.stage ?? "unspecified"})` : "").join("; ") || t("No contextual use recorded", "ยังไม่มีบันทึก")}</p><small>{node.teaching?.sources.join(" · ")}</small></details>; })}
@@ -94,3 +98,46 @@ export function FacultyWorkspace({ events, attemptId }: { events: LearningEvent[
     </>}
   </section>;
 }
+
+/** Evaluation workbook (same tabs and columns as the Google Sheet): CSV per tab. The sheet itself updates automatically. */
+function EvaluationExport({ attempts, roster, reviews }: { attempts: EvidenceAttempt[]; roster: RosterMember[]; reviews: TeacherObservation[] }) {
+  const { language } = useLanguage(), t = (en: string, th: string) => language === "th" ? th : en;
+  const [tab, setTab] = useState<keyof typeof EVALUATION_TABS>("attempts"), [status, setStatus] = useState(""), [busy, setBusy] = useState(false);
+  const save = (name: string, rows: unknown[][]) => {
+    const url = URL.createObjectURL(new Blob([csvText(rows)], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a"); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const download = async () => {
+    setBusy(true);
+    try {
+      if (appConfig.mode === "demo") save(`${EVALUATION_TABS[tab].name}.csv`, tabValues(buildEvaluationWorkbook({ content: latestContent, attempts, roster, reviews }), tab));
+      else { const data = await adapter.sheetExport!("rows"); save(`${EVALUATION_TABS[tab].name}.csv`, data.tabs?.[EVALUATION_TABS[tab].name] ?? []); }
+      setStatus("");
+    } catch { setStatus(t("Export failed. Check your connection and two-step verification.", "ส่งออกไม่สำเร็จ ตรวจการเชื่อมต่อและการยืนยันสองขั้นตอน")); } finally { setBusy(false); }
+  };
+  return <article className="panel staff-private evaluation-export"><h2>{t("Evaluation workbook", "สมุดประเมินผล")}</h2>
+    <p>{t("Same tabs and columns as your Google Sheet: attempts, every station response, pre/post statistics, misconceptions, handovers, reviews and course feedback.", "แท็บและคอลัมน์เดียวกับ Google Sheet: attempt, คำตอบทุกสถานี, สถิติก่อน/หลังเรียน, ความเข้าใจผิด, handover, การทบทวน และความคิดเห็นต่อรายวิชา")}</p>
+    <label>{t("Tab", "แท็บ")}<select value={tab} onChange={event => setTab(event.target.value as keyof typeof EVALUATION_TABS)}>{(Object.keys(EVALUATION_TABS) as Array<keyof typeof EVALUATION_TABS>).map(key => <option key={key} value={key}>{EVALUATION_TABS[key].name}</option>)}</select></label>
+    <div className="button-row"><button className="secondary" disabled={busy} onClick={() => void download()}>{t("Download CSV", "ดาวน์โหลด CSV")}</button></div>
+    <p role="status">{status}</p></article>;
+}
+
+/** Clears a student's forgotten 4-digit code; the student sets a new one at next entry. */
+function ResetStudentCode() {
+  const { language } = useLanguage(), t = (en: string, th: string) => language === "th" ? th : en;
+  const [studentId, setStudentId] = useState(""), [status, setStatus] = useState(""), [busy, setBusy] = useState(false);
+  const reset = async () => {
+    const id = studentId.trim();
+    if (!id || busy || !window.confirm(t(`Reset the code of student ${id}? They will choose a new code at their next entry.`, `รีเซ็ตรหัสของนักศึกษา ${id}? นักศึกษาจะตั้งรหัสใหม่เมื่อเข้าเกมครั้งถัดไป`))) return;
+    setBusy(true);
+    try { await adapter.facultyWorkspace!("reset_code", { studentId: id }); setStatus(t(`Code cleared for ${id}. Ask the student to enter their ID and choose a new code now.`, `ล้างรหัสของ ${id} แล้ว ให้นักศึกษาใส่รหัสนักศึกษาและตั้งรหัสใหม่ทันที`)); setStudentId(""); }
+    catch { setStatus(t("Reset failed. Check the student ID (it must be in your cohort).", "รีเซ็ตไม่สำเร็จ ตรวจสอบรหัสนักศึกษา (ต้องอยู่ในกลุ่มของคุณ)")); }
+    finally { setBusy(false); }
+  };
+  return <article className="panel staff-private"><h2>{t("Reset a student's code", "รีเซ็ตรหัส 4 หลักของนักศึกษา")}</h2>
+    <p>{t("For a forgotten code, or if someone else claimed a student's ID. Do it while the student is with you, so they set the new code straight away.", "ใช้เมื่อนักศึกษาลืมรหัส หรือมีผู้อื่นใช้รหัสนักศึกษานั้นไปก่อน ควรทำขณะนักศึกษาอยู่ด้วย เพื่อให้ตั้งรหัสใหม่ทันที")}</p>
+    <label>{t("Student ID", "รหัสนักศึกษา")}<input value={studentId} onChange={event => setStudentId(event.target.value)} maxLength={40} /></label>
+    <div className="button-row"><button className="secondary" disabled={busy || !studentId.trim()} onClick={() => void reset()}>{t("Reset code", "รีเซ็ตรหัส")}</button></div>
+    <p role="status">{status}</p></article>;
+}
+

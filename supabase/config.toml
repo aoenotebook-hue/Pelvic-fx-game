@@ -39,3 +39,7 @@ import_map = "./functions/import_map.json"
 [functions.completion-status]
 verify_jwt = true
 import_map = "./functions/import_map.json"
+
+[functions.sheet-export]
+verify_jwt = true
+import_map = "./functions/import_map.json"

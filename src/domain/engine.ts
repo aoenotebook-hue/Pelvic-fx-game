@@ -40,6 +40,8 @@ export function deriveProgress(content: ContentVersion, events: LearningEvent[])
   for (const node of content.nodes) {
     const response = core.get(node.id);
     if (!response) continue;
+    // The pre-test is a baseline: it is reported separately and never adds to the learning score.
+    if (node.stage === "pretest") continue;
     if (answerIsCorrect(content, node.id, response.selectedOptionIds) && (!node.game || evaluate(node.game,response.gameAnswer).correct)) score += 2;
     else {
       const successful = (corrections.get(node.retryId) ?? []).some((event) => event.selectedOptionId === content.corrections.find((item) => item.id === node.retryId)?.correctOptionId && event.feedbackAcknowledged);
@@ -91,6 +93,8 @@ export function deriveProgress(content: ContentVersion, events: LearningEvent[])
   }).map((node) => node.id);
   const handoverNotes = content.nodes.filter((node) => node.interaction === "handover"||node.interaction==="handover_builder").map((node) => ({ missionId: node.missionId, nodeId: node.id, text: core.get(node.id)?.rationale?.trim() ?? "" }));
   for (const mission of content.missions) {
+    // The pre-test has no feedback or correction: it is complete once every item is answered.
+    if (mission.id === "mission-pre") { missionReviewed[mission.id] = mission.nodeIds.every((nodeId) => core.has(nodeId)); continue; }
     missionReviewed[mission.id] = (revised ? mission.nodeIds.every((nodeId) => clearedNodeIds.includes(nodeId)) : mission.nodeIds.every((nodeId) => core.has(nodeId) && feedback.has(nodeId))) &&
       (isGameVersion(content.id) ? [] : mission.nodeIds.filter((nodeId) => content.nodes.find((node) => node.id === nodeId)?.safetyFlag))
         .every((nodeId) => content.nodes.find((node) => node.id === nodeId)?.conceptIds.every((conceptId) => concepts.find((item) => item.conceptId === conceptId)?.resolved));

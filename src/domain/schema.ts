@@ -19,7 +19,7 @@ const node = z.object({
   confidenceOptions: z.array(z.enum(["low", "medium", "high"])).length(3), acceptedConditions: z.array(z.string()),
   resourceIds: z.array(id).min(1), referenceIds: z.array(id), retryId: id, nextNodeId: id.nullable(),
   scenePhase: z.string().optional(), interaction: z.enum(["action", "image_choice", "handover","card_sort","memory_match","sequence","hotspot","image_pick","card_pick","gauge","ring_trace","handover_builder","mcq"]).optional(), rationaleRequired: z.boolean().optional(),
-  game:miniGameSchema.optional(),objectiveIds:z.array(z.enum(["LO1","LO2","LO3","LO4","LO5","LO6","LO7"])).optional(),sourceRefs:z.array(z.object({doc:z.enum(["S","H","LP"]),page:z.number().int().positive()})).optional(),reviewNote:z.string().optional(),stage:z.enum(["practice","boss","gauntlet"]).optional(),
+  game:miniGameSchema.optional(),objectiveIds:z.array(z.enum(["LO1","LO2","LO3","LO4","LO5","LO6","LO7"])).optional(),sourceRefs:z.array(z.object({doc:z.enum(["S","H","LP"]),page:z.number().int().positive()})).optional(),reviewNote:z.string().optional(),stage:z.enum(["pretest","practice","boss","gauntlet"]).optional(),mustPass:z.boolean().optional(),bloom:z.enum(["remember","understand","apply","analyse"]).optional(),guideline:z.object({en:z.string(),th:z.string()}).optional(),
   explanationBeforeChoices:z.boolean().optional(), teaching:z.object({objective:z.string(),keyMessage:z.string(),misconception:z.string(),discussionPrompt:z.string(),suggestedFeedback:z.string(),sources:z.array(z.string()).min(1)}).optional(),
   visuals: z.array(z.object({ assetId: id, placement: z.enum(["question", "feedback"]), role: z.literal("teaching_example") })).optional()
 });

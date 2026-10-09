@@ -9,6 +9,7 @@ import { MINIGAME_VERSION, isGameVersion } from "./games/spec";
 import { correctionReviewed, LEARNING_VERSION } from "./domain/learningRules";
 import { LearningSummary } from "./learning/LearningSummary";
 import { FacultyWorkspace } from "./faculty/FacultyWorkspace";
+import { MfaSetup } from "./faculty/MfaSetup";
 import { activateContent, assetById, correctionById, pelvicTraumaContent, resourceById, sourceDocumentById, latestContent } from "./content/registry";
 import { computeRewards, clothingLevelFor, rankRewards, LEGACY_VERSION } from "./domain/rewards";
 import { beginPractice, beginRevision, resolveSession, saveSession, type AttemptSession } from "./storage/session";
@@ -17,9 +18,12 @@ import type { Confidence, LearningEvent, Node, SafetyConceptId } from "./domain/
 import { importAcceptedEvents, acknowledgeEvents, hasCompletionReceipt, appendEventAtomically, getOfflinePack, loadDraft, loadEvents, pendingEvents, saveDraft, stageOfflinePack, storeSubmissionRejections, submissionRejections } from "./storage/db";
 import { createBackendAdapter } from "./sync/adapter";
 import { recoverKnownCompletion } from "./sync/completionRecovery";
+import { validateLearnerEvent } from "./domain/serverRules";
+
+const SYNCED_TYPES = new Set(["core_response","correction_response","feedback_ack","correction_feedback_ack","handover_prepared","resource_viewed","reflection_submitted","course_feedback"]);
 import type { LeaderboardRow } from "./sync/adapter";
 import { createBaseEvent, setActiveLearnerId, setActiveContentVersion } from "./utils/events";
-import { I18nContext, localizeCorrection, localizeMission, localizeNode, localizeResource, t, useLanguage, type Language } from "./i18n";
+import { I18nContext, isProblemNotice, localizeNotice, localizeCorrection, localizeMission, localizeNode, localizeResource, t, useLanguage, type Language } from "./i18n";
 
 type View = "avatar" | "home" | "access" | "orientation" | "missions" | "decision" | "resources" | "reflection" | "progress" | "followup" | "faculty" | "help";
 type CharacterReaction = "observe" | "urgent" | "inspect" | "communicate" | "celebrate" | "reconsider";
@@ -53,15 +57,25 @@ function App() {
   const [nodeId, setNodeId] = useState("M1N1");
   const [offlineState, setOfflineState] = useState<"none" | "downloading" | "ready" | "incomplete">("none");
   const [notice, setNotice] = useState("");
+  // Information notices fade after a few seconds; problems stay until dismissed.
+  useEffect(() => {
+    if (!notice || isProblemNotice(notice)) return;
+    const timer = window.setTimeout(() => setNotice(""), 3500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const [online, setOnline] = useState(navigator.onLine);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [staffAuthorized,setStaffAuthorized]=useState(appConfig.mode==="demo");
+  // A teacher whose role is confirmed but who has not yet passed two-step verification this session.
+  const [staffNeedsMfa,setStaffNeedsMfa]=useState(false);
+  const checkStaff=()=>backend.facultyWorkspace?.("context").then(result=>{setStaffAuthorized(Boolean(result.authorized));setStaffNeedsMfa(Boolean(result.mfaRequired));}).catch(()=>{setStaffAuthorized(false);setStaffNeedsMfa(false);});
   const [authRevision,setAuthRevision]=useState(0);
   const [signedIn, setSignedIn] = useState(appConfig.mode === "demo");
   const [studentId,setStudentId]=useState("");
   const [resetOpen,setResetOpen]=useState(false);
   const currentSession=useRef<AttemptSession|null>(null);
+  // Counts nav taps, so pressing the current tab still returns to its top level inside the game.
   const [navigationRevision, setNavigationRevision] = useState(0);
   const navigate = (next: View) => { setView(next); setNavigationRevision(value => value + 1); };
   const syncRunning=useRef(false);
@@ -104,7 +118,7 @@ function App() {
         accountKey=partition;attemptId=session.attemptId;currentSession.current=session;setActiveLearnerId(userId??appConfig.demoUserId);
         activateContent(session.contentVersion);setActiveContentVersion(session.contentVersion);setActiveVersion(session.contentVersion);
         setEvents(stored);setOfflineState(pack?.state==="staging"?"downloading":pack?.state??"none");
-        if(appConfig.mode==="connected"){setView(window.location.hash.startsWith("#teacher")?"faculty":"home");void backend.facultyWorkspace?.("context").then(result=>{if(active&&revision===generation)setStaffAuthorized(Boolean(result.authorized));}).catch(()=>undefined);}
+        if(appConfig.mode==="connected"){setView(window.location.hash.startsWith("#teacher")?"faculty":"home");void backend.facultyWorkspace?.("context").then(result=>{if(active&&revision===generation){setStaffAuthorized(Boolean(result.authorized));setStaffNeedsMfa(Boolean(result.mfaRequired));}}).catch(()=>undefined);}
         setAuthRevision(value=>value+1);
       }catch{if(active)setNotice("Device storage is unavailable. Progress cannot be saved until this is resolved.");}
       finally{if(active&&revision===generation)setReady(true);}
@@ -131,18 +145,21 @@ function App() {
   const addEvent = useCallback(async (event: LearningEvent) => {
     try {
       const partition=accountKey;
+      // Check with the same rules the server uses, so an event the server would reject is never queued.
+      if (SYNCED_TYPES.has(event.type)) { const problem = validateLearnerEvent(event as unknown as Record<string, unknown>); if (problem) { setNotice(`Not saved: ${problem}`); return false; } }
       const saved=await appendEventAtomically(partition, event);
       if(partition===accountKey && event.attemptId===attemptId) setEvents((current) => current.some(item=>item.eventId===event.eventId)?current:[...current,saved??event]);
-      setNotice("Saved on this device");
-      return true;
+      return true; // Saving is shown by the sync counter; a banner after every tap would cover the game.
     } catch {
       setNotice("Not saved. Check available browser storage and try again.");
       return false;
     }
   }, []);
 
-  const sync = useCallback(async () => {
-    if (!online) { setNotice("Connect to submit"); return; }
+  const sync = useCallback(async (manual = true) => {
+    // Background syncs stay quiet unless something needs the learner's attention.
+    const tell = (message: string, problem = false) => { if (manual || problem) setNotice(message); };
+    if (!online) { if (manual) setNotice("Connect to submit"); return; }
     if(syncRunning.current)return;syncRunning.current=true;
     const partition=accountKey,targetAttempt=attemptId;
     try {
@@ -155,7 +172,7 @@ function App() {
         if (receipt) await acknowledgeEvents(partition, [], receipt);
         if (partition === accountKey && targetAttempt === attemptId) {
           setEvents(saved);
-          setNotice(receipt ? "Course completion confirmed" : checked ? "No pending events; completion status checked." : "No pending events. Start a quest when you are ready.");
+          tell(receipt ? "Course completion confirmed" : checked ? "No pending events; completion status checked." : "No pending events. Start a quest when you are ready.");
         }
         return;
       }
@@ -165,13 +182,13 @@ function App() {
       try {const recovered=await backend.recoverCompletion?.(targetAttempt);if(recovered)await acknowledgeEvents(partition,[],recovered);}catch {/* Acknowledgments are durable even if receipt recovery must retry. */}
       const refreshed = await loadEvents(partition, targetAttempt);
       if(partition===accountKey&&targetAttempt===attemptId)setEvents(refreshed);
-      if(partition===accountKey&&targetAttempt===attemptId)setNotice(appConfig.mode === "demo" ? "Demo sync checked locally; no course server was contacted." : result.rejected.length || result.retryable.length ? `Accepted ${result.acknowledgments.length}; ${result.retryable.length} waiting and ${result.rejected.length} rejected. Completion is not confirmed.` : result.completionReceipt ? "Course completion confirmed" : "Events accepted; course completion not yet confirmed.");
+      if(partition===accountKey&&targetAttempt===attemptId)tell(appConfig.mode === "demo" ? "Demo sync checked locally; no course server was contacted." : result.rejected.length || result.retryable.length ? `Accepted ${result.acknowledgments.length}; ${result.retryable.length} waiting and ${result.rejected.length} rejected. Completion is not confirmed.` : result.completionReceipt ? "Course completion confirmed" : "Events accepted; course completion not yet confirmed.", result.rejected.length > 0);
     } catch {
-      if(partition===accountKey&&targetAttempt===attemptId)setNotice("Submission did not finish. Your work remains saved on this device.");
+      if(partition===accountKey&&targetAttempt===attemptId)tell("Submission did not finish. Your work remains saved on this device.", manual);
     } finally {syncRunning.current=false;}
   }, [online]);
 
-  useEffect(() => { if(!online||!ready||!signedIn)return;const timer=setTimeout(()=>{void sync();},400);return()=>clearTimeout(timer); }, [online,ready,signedIn,pendingCount,authRevision,sync]);
+  useEffect(() => { if(!online||!ready||!signedIn)return;const timer=setTimeout(()=>{void sync(false);},400);return()=>clearTimeout(timer); }, [online,ready,signedIn,pendingCount,authRevision,sync]);
 
   useEffect(() => {
     document.documentElement.scrollTop = 0;
@@ -233,7 +250,7 @@ function App() {
     return () => lifecycle.abort();
   }, [progress.answeredNodeIds.length, progress.score, progress.locallyComplete]);
 
-  if (!ready) return <div className="loading" role="status">Loading your saved learning…</div>;
+  if (!ready) return <div className="loading" role="status">{language === "th" ? "กำลังโหลดงานที่บันทึกไว้…" : "Loading your saved learning…"}</div>;
   if(import.meta.env.DEV&&window.location.hash==="#/art")return <ArtGallery/>;
 
   const visibleView = appConfig.mode === "connected" && !signedIn ? "access" : view;
@@ -254,19 +271,19 @@ function App() {
         <div className="status-cluster">
           <button className="language-toggle" onClick={() => setLanguage(language === "en" ? "th" : "en")} aria-label={language === "en" ? "เปลี่ยนเป็นภาษาไทย" : "Switch to English"}>{language === "en" ? "ไทย" : "EN"}</button>
           {signedIn&&studentId&&<span className="student-id">{language==="th"?"รหัสนักศึกษา":"Student ID"}: {studentId}</span>}
-          {appConfig.mode === "connected" && signedIn && <AccountMenu studentId={studentId} onProgress={()=>navigate("progress")} onSync={()=>void sync()} onReset={()=>setResetOpen(true)} language={language} pendingCount={pendingCount} signOut={async () => { if (!backend.signOut) throw new Error("Sign-out unavailable"); await backend.signOut(); }} onSignedOut={() => {
-            setSignedIn(false);setStaffAuthorized(false);setEvents([]);accountKey="connected:signed-out";setView("access");
+          {appConfig.mode === "connected" && signedIn && <AccountMenu studentId={studentId} onProgress={()=>navigate("progress")} onSync={()=>void sync(true)} onReset={()=>setResetOpen(true)} language={language} pendingCount={pendingCount} signOut={async () => { if (!backend.signOut) throw new Error("Sign-out unavailable"); await backend.signOut(); }} onSignedOut={() => {
+            setSignedIn(false);setStaffAuthorized(false);setStaffNeedsMfa(false);setEvents([]);accountKey="connected:signed-out";setView("access");
             window.history.replaceState(null,"",window.location.pathname+window.location.search);
             setNotice(language==="th"?"ออกจากระบบแล้ว งานที่บันทึกไว้ยังอยู่ในอุปกรณ์นี้":"Signed out. Saved work stays on this device.");
           }} />}
-          <button className="demo-pill" onClick={() => setView("access")}>{appConfig.mode === "demo" ? "DEMO · fictional records" : "CONNECTED"}</button>
+          <button className="demo-pill" onClick={() => setView("access")}>{t(appConfig.mode === "demo" ? "DEMO · fictional records" : "CONNECTED", language)}</button>
           <span className="connection" aria-live="polite">{online ? <Wifi size={16} /> : <WifiOff size={16} />}{t(online ? "Online" : "Offline", language)}</span>
         </div>
       </header>
 
-      {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss message">×</button></div>}
+      {notice && <div className={isProblemNotice(notice) ? "notice problem" : "notice"} role={isProblemNotice(notice) ? "alert" : "status"}><span>{localizeNotice(notice, language)}</span><button onClick={() => setNotice("")} aria-label={language === "th" ? "ปิดข้อความ" : "Dismiss message"}>×</button></div>}
       {resetOpen&&<PracticeReset thai={language==="th"} onCancel={()=>setResetOpen(false)} onConfirm={()=>void resetPractice()}/>}
-      {updateAvailable && <div className="notice update" role="status"><span>Update available. Finish your current answer before refreshing.</span><button onClick={() => window.dispatchEvent(new CustomEvent("ptd:apply-update"))}>Refresh now</button></div>}
+      {updateAvailable && <div className="notice update" role="status"><span>{t("Update available. Finish your current answer before refreshing.", language)}</span><button onClick={() => window.dispatchEvent(new CustomEvent("ptd:apply-update"))}>{t("Refresh now", language)}</button></div>}
 
       <div className={signedIn ? "layout" : "layout signed-out-layout"}>
         {signedIn && <>
@@ -276,10 +293,11 @@ function App() {
           <NavButton icon={<Map />} label={t("Quests", language)} active={["missions", "decision"].includes(view)} onClick={() => navigate("missions")} />
           <NavButton icon={<BookOpen />} label={t("Resources", language)} active={view === "resources"} onClick={() => navigate("resources")} />
           <NavButton icon={<ClipboardCheck />} label={t("My progress", language)} active={["progress", "reflection"].includes(view)} onClick={() => navigate("progress")} />
+          {(staffAuthorized || staffNeedsMfa) && <NavButton icon={<LayoutDashboard />} label={t(appConfig.mode === "demo" ? "Faculty demo" : "Faculty", language)} active={false} onClick={() => navigate("faculty")} />}
           </>}
-          <NavButton icon={<CircleHelp />} label={t("Help", language)} active={view === "help"} onClick={() => setView("help")} />
+          <NavButton icon={<CircleHelp />} label={t("Help", language)} active={view === "help"} onClick={() => navigate("help")} />
           <div className="nav-sync">
-            <button className="secondary full" onClick={sync} disabled={!signedIn}><RefreshCw size={18} /> {t("Sync now", language)}</button>
+            <button className="secondary full" onClick={()=>void sync(true)} disabled={!signedIn}><RefreshCw size={18} /> {t("Sync now", language)}</button>
             <small>{pendingCount ? `${pendingCount} ${t("waiting to sync", language)}` : t("Saved and checked", language)}</small>
           </div>
           <small className="game-credit">{t("Game by Sorawut Thamyongkit", language)}</small>
@@ -291,7 +309,7 @@ function App() {
           {visibleView === "access" && !signedIn ? <AccessView /> : <>
           {activeVersion !== latestContent.id && <div className="version-resume"><span>{language === "th" ? "กำลังทำเวอร์ชันเดิมที่บันทึกไว้" : "Resuming your original saved version"}</span><button className="quiet" onClick={() => void startRevision()}>{language === "th" ? "เปิดเรื่องราวและ rewards ใหม่" : "Open revised cases and rewards"}</button></div>}
           {view!=="faculty"&&<GlobalProgress progress={progress.answeredNodeIds.length} />}
-          {isGameVersion(activeVersion)&&!["avatar","access","faculty","help"].includes(view)?<><MiniGameJourney content={pelvicTraumaContent} events={events} addEvent={addEvent} attemptId={attemptId} partition={accountKey} avatar={avatar} view={view} navigationRevision={navigationRevision}/><details className="offline-tools"><summary>{language==="th"?"ใช้เกมแบบ offline":"Offline access"}</summary><button className="secondary" onClick={downloadPack}>{language==="th"?"ดาวน์โหลดสำหรับ offline":"Download for offline"} · {offlineState}</button></details></>:<>
+          {isGameVersion(activeVersion)&&!["avatar","access","faculty","help"].includes(view)?<><MiniGameJourney content={pelvicTraumaContent} events={events} addEvent={addEvent} attemptId={attemptId} partition={accountKey} avatar={avatar} view={view} navigationRevision={navigationRevision} hubFooter={<button className="secondary offline-download" onClick={downloadPack}>{language==="th"?"ดาวน์โหลดสำหรับใช้ offline":"Download for offline use"} · {t(offlineLabel(offlineState), language)}</button>}/></>:<>
           {view === "avatar" && <AvatarPicker selectedId={avatar.id} choose={(id) => { localStorage.setItem("ptd-avatar", id); setAvatarId(id); setView("home"); }} />}
           {view === "home" && <HomeView progress={progress} start={start} go={setView} openMission={(node: string) => { setNodeId(node); setView("decision"); }} offlineState={offlineState} downloadPack={downloadPack} packBytes={packBytes} installPrompt={installPrompt} setInstallPrompt={setInstallPrompt} avatar={avatar} masteredCount={masteredCount} rewardScore={rewardScore} chooseAvatar={() => setView("avatar")} />}
           {view === "access" && <AccessView />}
@@ -300,10 +318,11 @@ function App() {
           {view === "decision" && <DecisionFlow nodeId={nodeId} setNodeId={setNodeId} events={events} addEvent={addEvent} go={setView} avatarPath={avatar.path} avatarId={avatar.id} masteredCount={masteredCount} />}
           {view === "resources" && <ResourcesView addEvent={addEvent} events={events} go={setView} />}
           {view === "reflection" && <ReflectionView events={events} addEvent={addEvent} progress={progress} go={setView} />}
-          {view === "progress" && <ProgressView progress={progress} events={events} go={setView} sync={sync} avatarId={avatar.id} />}
+          {view === "progress" && <ProgressView progress={progress} events={events} go={setView} sync={() => void sync(true)} avatarId={avatar.id} />}
           {view === "followup" && <FollowUp />}
           </>}
-          {view === "faculty" && (staffAuthorized ? <FacultyDashboard progress={progress} events={events} addEvent={addEvent} /> : <p>Assigned faculty authorization is required.</p>)}
+          {view === "faculty" && staffNeedsMfa && !staffAuthorized && <MfaSetup backend={backend} onVerified={() => void checkStaff()} />}
+          {view === "faculty" && !staffNeedsMfa && (staffAuthorized ? <FacultyDashboard progress={progress} events={events} addEvent={addEvent} /> : <p>{language === "th" ? "ต้องเป็นอาจารย์ที่ได้รับมอบหมายและยืนยันตัวตนสองขั้นตอนแล้ว" : "Assigned faculty authorization (with two-step verification) is required."}</p>)}
           {view === "help" && <HelpView addEvent={addEvent} events={events} offlineState={offlineState} installPrompt={installPrompt} setInstallPrompt={setInstallPrompt} />}
           </>}
         </main>
@@ -311,6 +330,10 @@ function App() {
     </div>
     </I18nContext.Provider>
   );
+}
+
+function offlineLabel(state: "none" | "downloading" | "ready" | "incomplete") {
+  return { none: "not downloaded", downloading: "downloading…", ready: "ready offline", incomplete: "incomplete — retry" }[state];
 }
 
 function NavButton({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick(): void }) {
@@ -479,19 +502,56 @@ function Orientation({ go }: { go(view: View): void }) {
 }
 
 function AccessView() {
-  const {language}=useLanguage();const th=language==="th";
-  const [email, setEmail] = useState("");
-  const [studentId,setStudentId]=useState("");
+  const {language}=useLanguage();const th=language==="th";const tr=(en:string,thai:string)=>th?thai:en;
   const [teacher,setTeacher]=useState(window.location.hash.startsWith("#teacher"));
+  const [email, setEmail] = useState("");
+  const [studentId,setStudentId]=useState(""),[code,setCode]=useState(""),[confirm,setConfirm]=useState("");
+  // "setup": first visit (or code cleared by the teacher) — choose the code and type it twice.
+  const [setup,setSetup]=useState(false);
   const [busy,setBusy]=useState(false);const entering=useRef(false);
   const [status, setStatus] = useState("");
-  const requestLink = async () => {
+  const codeValid=/^\d{4}$/.test(code), idValid=/^[A-Za-z0-9_-]{1,40}$/.test(studentId.trim());
+  const teacherLink = async () => {
     if (entering.current||!email.trim()) return;entering.current=true;setBusy(true);setStatus("");
-    try { if(teacher){await backend.signIn?.(email.trim());setStatus(th?"ตรวจสอบลิงก์เข้าสู่ระบบในอีเมล":"Check your email for your teacher sign-in link.");}else{await backend.enterLearner?.(email.trim(),studentId.trim());setStatus(th?"เข้าสู่ระบบแล้ว":"Signed in.");} }
-    catch { setStatus(th?"เข้าสู่ระบบไม่สำเร็จ ตรวจสอบข้อมูลหรือติดต่ออาจารย์":"Could not enter. Check your details or ask your teacher for help."); }
+    // Same message whether or not the address is enrolled, so the screen cannot be used to discover accounts.
+    try { await backend.signIn?.(email.trim()); } catch { /* same message */ }
+    setStatus(tr("If this email belongs to a teacher, a sign-in link has been sent. Check your inbox.","หากอีเมลนี้เป็นของอาจารย์ ระบบได้ส่งลิงก์เข้าสู่ระบบแล้ว ตรวจสอบกล่องอีเมล"));
+    entering.current=false;setBusy(false);
+  };
+  const enter = async () => {
+    if (entering.current||!idValid||!codeValid) return;
+    if (setup&&code!==confirm) { setStatus(tr("The two codes do not match.","รหัสสองช่องไม่ตรงกัน")); return; }
+    entering.current=true;setBusy(true);setStatus("");
+    try {
+      const result=await backend.enterLearner!(studentId.trim(),code,setup);
+      if(result.status==="signed_in")setStatus(tr("Signed in.","เข้าสู่ระบบแล้ว"));
+      else if(result.status==="needs_setup"){setSetup(true);setConfirm("");setStatus(tr("First time with this student ID: type your new 4-digit code again to confirm it. Remember it — you need it to come back.","ใช้รหัสนักศึกษานี้ครั้งแรก: พิมพ์รหัส 4 หลักอีกครั้งเพื่อยืนยัน จำรหัสนี้ไว้ ต้องใช้เมื่อกลับมาเล่นต่อ"));}
+      else if(result.status==="wrong_code")setStatus(tr(`Wrong code. ${result.remaining} tries left before a 15-minute lock.`,`รหัสไม่ถูกต้อง เหลืออีก ${result.remaining} ครั้งก่อนถูกล็อก 15 นาที`));
+      else if(result.status==="locked")setStatus(tr("Too many wrong codes. Try again in 15 minutes, or ask your teacher to reset your code.","ใส่รหัสผิดหลายครั้ง ลองใหม่ใน 15 นาที หรือขอให้อาจารย์รีเซ็ตรหัส"));
+      else if(result.status==="already_registered"){setSetup(false);setStatus(tr("This student ID already has a code. Enter your code, or ask your teacher to reset it.","รหัสนักศึกษานี้ตั้งรหัสไว้แล้ว ใส่รหัสเดิม หรือขอให้อาจารย์รีเซ็ต"));}
+      else if(result.status==="too_many")setStatus(tr("Too many attempts. Wait a minute and try again.","ลองหลายครั้งเกินไป รอ 1 นาทีแล้วลองใหม่"));
+      else setStatus(tr("Could not enter. Check your student ID and code, or ask your teacher.","เข้าไม่ได้ ตรวจสอบรหัสนักศึกษาและรหัส 4 หลัก หรือติดต่ออาจารย์"));
+    } catch { setStatus(tr("Could not enter. Check your connection and try again.","เข้าไม่ได้ ตรวจสอบการเชื่อมต่อแล้วลองใหม่")); }
     finally{entering.current=false;setBusy(false);}
   };
-  return <section className="reading page-enter"><h1>{appConfig.mode==="demo"?"Local demonstration":teacher?(th?"เข้าสู่ระบบอาจารย์":"Teacher sign-in"):(th?"เข้าเกม":"Enter game")}</h1>{appConfig.mode==="demo"?<p>Fictional local demonstration. Course reporting requires the connected service.</p>:<><form onSubmit={event=>{event.preventDefault();void requestLink();}}><label><span>{th?"อีเมล":"Email address"}</span><input autoComplete="email" required type="email" value={email} onChange={event=>setEmail(event.target.value)} /></label>{!teacher&&<label><span>{th?"รหัสนักศึกษา":"Student ID"}</span><input autoComplete="username" required type="text" maxLength={40} value={studentId} onChange={event=>setStudentId(event.target.value)} /></label>}<button className="primary" disabled={busy||!email.trim()||(!teacher&&!studentId.trim())}>{busy?(th?"กำลังเข้าสู่ระบบ…":"Entering…"):teacher?(th?"ส่งลิงก์เข้าสู่ระบบ":"Send teacher sign-in link"):(th?"เข้าเกม":"Enter game")}</button></form><p role="status">{status}</p>{!teacher&&<small>{th?"ใช้ข้อมูลเดิมเพื่อกลับมาเล่นต่อ ผู้ที่รู้อีเมลและรหัสนักศึกษาทั้งสองอย่างสามารถเปิดบันทึกนี้ได้":"Use the same details to resume. Anyone knowing both can access this learner record."}</small>}<p><button className="text-button" onClick={()=>{setTeacher(!teacher);setStatus("");}}>{teacher?(th?"กลับไปเข้าสู่เกมนักศึกษา":"Student entry"):(th?"สำหรับอาจารย์":"Teacher access")}</button></p></>}</section>;
+  const pinInput=(value:string,set:(v:string)=>void,label:string,id:string)=><label htmlFor={id}><span>{label}</span><input id={id} className="pin-input" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete={setup?"new-password":"current-password"} type="password" required value={value} onChange={event=>set(event.target.value.replace(/\D/g,"").slice(0,4))} /></label>;
+  if(appConfig.mode==="demo")return <section className="reading page-enter"><h1>{tr("Local demonstration","โหมดทดลองในเครื่อง")}</h1><p>{tr("Fictional local demonstration. Course reporting requires the connected service.","โหมดทดลองด้วยข้อมูลสมมติ การส่งผลรายวิชาต้องใช้ระบบที่เชื่อมต่อ")}</p></section>;
+  return <section className="reading page-enter">
+    <h1>{teacher?tr("Teacher sign-in","เข้าสู่ระบบอาจารย์"):tr("Enter game","เข้าเกม")}</h1>
+    {teacher?<form className="entry-form" onSubmit={event=>{event.preventDefault();void teacherLink();}}>
+      <label><span>{tr("Email address","อีเมล")}</span><input autoComplete="email" required type="email" value={email} onChange={event=>setEmail(event.target.value)} /></label>
+      <button className="primary" disabled={busy||!email.trim()}>{busy?tr("Sending…","กำลังส่ง…"):tr("Send teacher sign-in link","ส่งลิงก์เข้าสู่ระบบ")}</button>
+    </form>:<form className="entry-form" onSubmit={event=>{event.preventDefault();void enter();}}>
+      <label htmlFor="student-id"><span>{tr("Student ID","รหัสนักศึกษา")}</span><input id="student-id" autoComplete="username" autoCapitalize="characters" required type="text" maxLength={40} value={studentId} onChange={event=>{setStudentId(event.target.value);setSetup(false);}} /></label>
+      {pinInput(code,setCode,setup?tr("Choose a 4-digit code","ตั้งรหัส 4 หลัก"):tr("Your 4-digit code","รหัส 4 หลักของคุณ"),"student-code")}
+      {setup&&pinInput(confirm,setConfirm,tr("Type the code again","พิมพ์รหัสอีกครั้ง"),"student-code-confirm")}
+      <button className="primary" disabled={busy||!idValid||!codeValid||(setup&&confirm.length!==4)}>{busy?tr("Entering…","กำลังเข้าสู่ระบบ…"):setup?tr("Save code and enter","บันทึกรหัสและเข้าเกม"):tr("Enter game","เข้าเกม")}</button>
+      <p role="status" aria-live="polite" className="entry-status">{status}</p>
+      <small>{tr("First time? Type your student ID and choose any 4 digits; you will be asked to confirm them. Use the same ID and code to continue on any device. Do not share your code. Forgot it? Ask your teacher to reset it.","ครั้งแรก? ใส่รหัสนักศึกษาและตั้งรหัส 4 หลักได้เอง ระบบจะให้ยืนยันอีกครั้ง ใช้รหัสเดิมเพื่อเล่นต่อได้ทุกเครื่อง อย่าบอกรหัสกับผู้อื่น ลืมรหัส? ขอให้อาจารย์รีเซ็ต")}</small>
+    </form>}
+    {teacher&&<p role="status" aria-live="polite" className="entry-status">{status}</p>}
+    <p><button className="text-button" onClick={()=>{setTeacher(!teacher);setStatus("");}}>{teacher?tr("Student entry","เข้าเกมสำหรับนักศึกษา"):tr("Teacher access","สำหรับอาจารย์")}</button></p>
+  </section>;
 }
 
 function MissionMap({ events, progress, choose }: { events: LearningEvent[]; progress: ReturnType<typeof deriveProgress>; choose(nodeId: string): void }) {
@@ -697,7 +757,25 @@ function FacultyDashboard({events}: {progress:ReturnType<typeof deriveProgress>;
 
 function FollowUp() { return <section className="reading"><span className="eyebrow">AFTER CLASS</span><h1>Follow-up links</h1><p>No teacher-controlled day-2 or day-7 link has been released in this demo. Unseen assessment keys are not included in the offline pack.</p></section>; }
 
-function HelpView({ addEvent, events, offlineState, installPrompt, setInstallPrompt }: any) { const [message, setMessage] = useState(""); const [rejected,setRejected]=useState<Array<{eventId:string;reason:string}>>([]); useEffect(()=>{void submissionRejections(accountKey).then(setRejected).catch(()=>undefined);},[events]); const submit = async () => { await addEvent({ ...createBaseEvent(attemptId, nextClientSequence(events)), type: "issue_reported", nodeId: null, message: message.trim() }); setMessage(""); }; const install = async () => { if (installPrompt) { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null); } }; return <section className="stack page-enter"><div><span className="eyebrow">HELP AND RECOVERY</span><h1>Keep your work safe</h1></div>{rejected.length>0 && <article className="panel"><h2>Rejected records — still saved locally</h2>{rejected.map(item=><p key={item.eventId}>{item.reason} · {item.eventId}</p>)}<p>Contact the course team before retrying. Original responses have not been erased.</p></article>}<div className="help-grid"><article className="panel"><Download /><h2>Offline and installation</h2><p>First access and download require internet. Current pack: <strong>{offlineState}</strong>. Browser storage can be cleared or evicted, so sync when you reconnect.</p><button className="secondary" onClick={install} disabled={!installPrompt}>{installPrompt ? "Install this app" : "Use browser install menu"}</button><p><strong>iPhone:</strong> open in Safari, tap Share, then Add to Home Screen. Android Chrome normally offers Install app in its menu.</p></article><article className="panel"><ShieldCheck /><h2>Privacy and account changes</h2><p>Progress is partitioned by account on this device. Sign out only after syncing. Remote revocation cannot instantly erase an offline device; the learning content contains no patient data.</p></article><article className="panel report"><CircleHelp /><h2>Report a confusing question</h2><label><span>What was confusing?</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={800} /></label><button className="primary" disabled={!message.trim()} onClick={submit}>Save report</button><small>If offline, the report waits on this device and is submitted only for the same account.</small></article></div><details><summary>Support diagnostics</summary><pre>{JSON.stringify({ mode: appConfig.mode, online: navigator.onLine, contentVersion: pelvicTraumaContent.id, accountPartition: accountKey, eventCount: events.length, offlineState }, null, 2)}</pre></details></section>; }
+function HelpView({ addEvent, events, offlineState, installPrompt, setInstallPrompt }: any) {
+  const { language } = useLanguage();
+  const tr = (en: string, th: string) => (language === "th" ? th : en);
+  const [message, setMessage] = useState("");
+  const [rejected, setRejected] = useState<Array<{ eventId: string; reason: string }>>([]);
+  useEffect(() => { void submissionRejections(accountKey).then(setRejected).catch(() => undefined); }, [events]);
+  const submit = async () => { await addEvent({ ...createBaseEvent(attemptId, nextClientSequence(events)), type: "issue_reported", nodeId: null, message: message.trim() }); setMessage(""); };
+  const install = async () => { if (installPrompt) { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null); } };
+  return <section className="stack page-enter">
+    <div><span className="eyebrow">{tr("HELP AND RECOVERY", "ช่วยเหลือและกู้ข้อมูล")}</span><h1>{tr("Keep your work safe", "เก็บงานของคุณให้ปลอดภัย")}</h1></div>
+    {rejected.length > 0 && <article className="panel"><h2>{tr("Records the course server did not accept", "รายการที่เซิร์ฟเวอร์รายวิชาไม่รับ")}</h2>{rejected.map(item => <p key={item.eventId}>{item.reason}</p>)}<p>{tr("Your other answers keep syncing normally. Tell your teacher if this keeps happening.", "คำตอบอื่นยังส่งได้ตามปกติ แจ้งอาจารย์หากเกิดซ้ำ")}</p></article>}
+    <div className="help-grid">
+      <article className="panel"><Download /><h2>{tr("Offline and installation", "ใช้แบบ offline และติดตั้งแอป")}</h2><p>{tr("First access and download need the internet. Offline pack: ", "การเปิดครั้งแรกและดาวน์โหลดต้องใช้อินเทอร์เน็ต สถานะไฟล์ offline: ")}<strong>{t(offlineLabel(offlineState), language)}</strong>. {tr("Browsers can clear stored files, so sync when you reconnect.", "เบราว์เซอร์อาจลบไฟล์ที่เก็บไว้ ให้ sync เมื่อกลับมาออนไลน์")}</p><button className="secondary" onClick={install} disabled={!installPrompt}>{installPrompt ? tr("Install this app", "ติดตั้งแอปนี้") : tr("Use the browser's install menu", "ใช้เมนูติดตั้งของเบราว์เซอร์")}</button><p><strong>iPhone:</strong> {tr("open in Safari, tap Share, then Add to Home Screen. Android Chrome offers Install app in its menu.", "เปิดใน Safari แตะแชร์ แล้วเลือกเพิ่มไปยังหน้าจอโฮม ส่วน Android Chrome มีเมนูติดตั้งแอป")}</p></article>
+      <article className="panel"><ShieldCheck /><h2>{tr("Privacy and shared devices", "ความเป็นส่วนตัวและเครื่องที่ใช้ร่วมกัน")}</h2><p>{tr("Your answers are stored for your account only and other students cannot open them. On a shared computer, sync first, then sign out from the Account menu. Answers not yet sent stay on the device until you sign in again with the same student ID.", "คำตอบเก็บแยกตามบัญชี นักศึกษาคนอื่นเปิดดูไม่ได้ หากใช้เครื่องร่วมกัน ให้ส่งข้อมูลก่อน แล้วออกจากระบบที่เมนูบัญชี คำตอบที่ยังไม่ได้ส่งจะอยู่ในเครื่องจนกว่าจะเข้าสู่ระบบด้วยรหัสนักศึกษาเดิม")}</p></article>
+      <article className="panel report"><CircleHelp /><h2>{tr("Report a confusing question", "แจ้งคำถามที่สับสน")}</h2><label><span>{tr("What was confusing?", "ส่วนไหนที่สับสน?")}</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={800} /></label><button className="primary" disabled={!message.trim()} onClick={submit}>{tr("Save report", "บันทึกรายงาน")}</button><small>{tr("If you are offline, the report waits on this device and is sent later for the same account.", "หากออฟไลน์ รายงานจะรอในเครื่องและส่งภายหลังสำหรับบัญชีเดียวกัน")}</small></article>
+    </div>
+    <details><summary>{tr("Support diagnostics", "ข้อมูลสำหรับฝ่ายสนับสนุน")}</summary><pre>{JSON.stringify({ mode: appConfig.mode, online: navigator.onLine, contentVersion: pelvicTraumaContent.id, eventCount: events.length, offlineState }, null, 2)}</pre></details>
+  </section>;
+}
 
 function conceptName(id: SafetyConceptId) { return { S1: "Urgent resuscitation and escalation", S2: "Binder landmark", S3: "Imaging during unresolved shock", S4: "Binder reassessment and removal", S5: "Urethral warning", S6: "Possible open injury" }[id]; }
 

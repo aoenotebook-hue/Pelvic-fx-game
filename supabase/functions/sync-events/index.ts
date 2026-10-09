@@ -1,3 +1,4 @@
+import { withCors } from "../_shared/http.ts";
 import { withSupabase } from "npm:@supabase/server@1.9.1";
 import { validateLearnerEvent, recomputeServerSummary, serverRules } from "../../../src/domain/serverRules.ts";
 import {validateLearningSequence} from "../../../src/domain/learningRules.ts";
@@ -11,6 +12,15 @@ type IncomingEvent = {
   selectedOptionId?: string; [key: string]: unknown;
 };
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Removed learners and retired content must not keep writing evidence.
+async function stillEnrolled(admin: any, userId: string, cohortId: string, version: string) {
+  const [{ data: member }, { data: content }] = await Promise.all([
+    admin.from("memberships").select("learner_id").eq("user_id", userId).eq("cohort_id", cohortId).maybeSingle(),
+    admin.from("content_versions").select("status").eq("id", version).maybeSingle()
+  ]);
+  return member && content?.status === "published" ? String(member.learner_id) : null;
+}
 function reject(message: string, status = 400) { return Response.json({ error: message }, { status }); }
 async function sha256(value: Record<string, unknown>) {
   const bytes = new TextEncoder().encode(canonicalEventJson(value));
@@ -18,7 +28,7 @@ async function sha256(value: Record<string, unknown>) {
 }
 
 export default {
-  fetch: withSupabase({ auth: "user" }, async (request, ctx) => {
+  fetch: withCors(withSupabase({ auth: "user" }, async (request, ctx) => {
     if (request.method !== "POST") return reject("Method not allowed", 405);
     const raw = await request.text();
     if (new TextEncoder().encode(raw).length > serverRules.maxBatchBytes) return reject("Batch is too large", 413);
@@ -37,37 +47,74 @@ export default {
 
     if(body.events.some(event=>!event||typeof event!=="object"))return reject("Malformed event");
     const ordered = [...body.events].sort((a, b) => a.clientSequence - b.clientSequence);
-    for (const event of ordered) {
-      if (new TextEncoder().encode(JSON.stringify(event)).length > serverRules.maxEventBytes || !event.eventId || !event.attemptId || !Number.isInteger(event.clientSequence) || event.clientSequence<1) {
-        rejected.push({ eventId: event.eventId ?? "unknown", reason: "Malformed or oversized event" }); continue;
+    // Per-request cache of each attempt's stored payloads, so sequence checks are not re-queried per event.
+    const priorByAttempt = new Map<string, { payloads: Record<string, unknown>[]; latest: number; bySequence: Map<number, Record<string, unknown>> }>();
+    const loadPrior = async (attemptId: string) => {
+      const cached = priorByAttempt.get(attemptId);
+      if (cached) return cached;
+      // Explicit ranges so the provider's default row limit never truncates evidence.
+      const rows: Array<{ client_sequence: number; payload: Record<string, unknown> }> = [];
+      for (let offset = 0; ; offset += 500) {
+        const { data, error } = await ctx.supabaseAdmin.from("response_events").select("client_sequence,payload").eq("attempt_id", attemptId).order("client_sequence").range(offset, offset + 499);
+        if (error) return null;
+        rows.push(...(data ?? []));
+        if ((data ?? []).length < 500) break;
       }
-      const validationError = validateLearnerEvent(event);
-      if (validationError) { rejected.push({eventId:event.eventId,reason:validationError}); continue; }
-
+      const entry = { payloads: rows.map((row) => row.payload), latest: rows.at(-1)?.client_sequence ?? 0, bySequence: new Map(rows.map((row) => [row.client_sequence as number, row.payload as Record<string, unknown>])) };
+      priorByAttempt.set(attemptId, entry);
+      return entry;
+    };
+    for (const event of ordered) {
+      if (new TextEncoder().encode(JSON.stringify(event)).length > serverRules.maxEventBytes || typeof event.attemptId !== "string" || !UUID.test(event.attemptId) || !Number.isInteger(event.clientSequence) || event.clientSequence<1) {
+        rejected.push({ eventId: String(event.eventId ?? "unknown"), reason: "Malformed or oversized event" }); continue;
+      }
       const hash = await sha256(event);
-      const { data: existing } = await ctx.supabaseAdmin.from("response_events").select("payload,server_receipt_timestamp").eq("user_id", userId).eq("attempt_id", event.attemptId).eq("event_id", event.eventId).maybeSingle();
-      if (existing) {
-        if (canonicalEventJson(existing.payload) !== canonicalEventJson(event)) rejected.push({ eventId: event.eventId, reason: "Event ID was reused with altered data" });
-        else acknowledgments.push({ eventId: event.eventId, serverReceiptTimestamp: existing.server_receipt_timestamp });
+      if (typeof event.eventId === "string" && UUID.test(event.eventId)) {
+        const { data: existing } = await ctx.supabaseAdmin.from("response_events").select("payload,payload_sha256,server_receipt_timestamp").eq("user_id", userId).eq("attempt_id", event.attemptId).eq("event_id", event.eventId).maybeSingle();
+        if (existing) {
+          // Older rows may carry a non-canonical hash; then compare values (learnerId is server-assigned).
+          const same = existing.payload_sha256 === hash || canonicalEventJson({ ...existing.payload, learnerId: event.learnerId }) === canonicalEventJson(event);
+          if (!same) rejected.push({ eventId: event.eventId, reason: "Event ID was reused with altered data" });
+          else acknowledgments.push({ eventId: event.eventId, serverReceiptTimestamp: existing.server_receipt_timestamp });
+          continue;
+        }
+      }
+
+      const { data: attempt } = await ctx.supabaseAdmin.from("attempts").select("id,user_id,course_id,cohort_id,content_version").eq("id", event.attemptId).eq("user_id", userId).eq("course_id", body.courseId).maybeSingle();
+      if (!attempt || attempt.content_version !== event.contentVersion) { rejected.push({ eventId: String(event.eventId), reason: "Attempt ownership or version mismatch" }); continue; }
+      const enrolledLearnerId = await stillEnrolled(ctx.supabaseAdmin, userId, attempt.cohort_id, attempt.content_version);
+      if (!enrolledLearnerId) { rejected.push({ eventId: String(event.eventId), reason: "Enrollment or published content is no longer active" }); continue; }
+      const prior = await loadPrior(event.attemptId);
+      if (!prior) { retryable.push(String(event.eventId)); continue; }
+      if (event.clientSequence > prior.latest + 1) { retryable.push(String(event.eventId)); continue; }
+      if (event.clientSequence <= prior.latest) {
+        const occupant = prior.bySequence.get(event.clientSequence);
+        const reason = occupant?.type === "rejected" && occupant.rejectedEventId === event.eventId ? String(occupant.reason ?? "Rejected")
+          : "Another device already submitted this sequence. Accepted answers are preserved; ask your teacher to review the local conflict.";
+        rejected.push({ eventId: String(event.eventId), reason }); continue;
+      }
+
+      const formatError = typeof event.eventId !== "string" || !UUID.test(event.eventId) ? "Event ID must be a UUID"
+        : typeof event.clientTimestamp !== "string" || Number.isNaN(Date.parse(event.clientTimestamp)) ? "Invalid client timestamp" : null;
+      const validationError = formatError ?? validateLearnerEvent(event) ?? validateLearningSequence(event as unknown as LearningEvent, prior.payloads as unknown as LearningEvent[]);
+      const row = validationError
+        // A rejected event keeps its sequence position as a tombstone so that later valid events are never blocked by a gap.
+        ? { event_id: crypto.randomUUID(), event_type: "rejected", payload: { type: "rejected", rejectedEventId: String(event.eventId), reason: validationError, attemptId: event.attemptId, contentVersion: event.contentVersion, clientSequence: event.clientSequence } }
+        : { event_id: event.eventId, event_type: event.type, payload: { ...event, learnerId: enrolledLearnerId } }; // learnerId comes from the enrollment, never from the client
+      const { data: inserted, error } = await ctx.supabaseAdmin.from("response_events").insert({
+        ...row, attempt_id: event.attemptId, user_id: userId, content_version: event.contentVersion,
+        client_sequence: event.clientSequence, payload_sha256: validationError ? await sha256(row.payload) : hash,
+        client_timestamp: validationError ? null : event.clientTimestamp
+      }).select("server_receipt_timestamp").single();
+      if (error) {
+        priorByAttempt.delete(event.attemptId);
+        if (error.code === "P0001") rejected.push({ eventId: String(event.eventId), reason: "Attempt evidence limit reached. Accepted and local work are preserved; contact your teacher." });
+        else retryable.push(String(event.eventId));
         continue;
       }
-
-      const { data: attempt } = await ctx.supabaseAdmin.from("attempts").select("id,user_id,course_id,content_version").eq("id", event.attemptId).eq("user_id", userId).eq("course_id", body.courseId).maybeSingle();
-      if (!attempt || attempt.content_version !== event.contentVersion) { rejected.push({ eventId: event.eventId, reason: "Attempt ownership or version mismatch" }); continue; }
-      let prior;try{prior=await readAttemptEvents(ctx.supabaseAdmin,event.attemptId,userId);}catch{retryable.push(event.eventId);continue;}
-      const sequenceError=validateLearningSequence(event as unknown as LearningEvent,(prior??[]).map(row=>row.payload));
-      if(sequenceError){rejected.push({eventId:event.eventId,reason:sequenceError});continue;}
-      const { data: latest } = await ctx.supabaseAdmin.from("response_events").select("client_sequence").eq("attempt_id", event.attemptId).order("client_sequence", { ascending: false }).limit(1).maybeSingle();
-      if(event.clientSequence<=(latest?.client_sequence??0)){rejected.push({eventId:event.eventId,reason:"Another device already submitted this sequence. Accepted answers are preserved; ask your teacher to review the local conflict."});continue;}
-      if (event.clientSequence > (latest?.client_sequence ?? 0) + 1) { retryable.push(event.eventId); continue; }
-
-      const { data: inserted, error } = await ctx.supabaseAdmin.from("response_events").insert({
-        event_id: event.eventId, attempt_id: event.attemptId, user_id: userId, content_version: event.contentVersion,
-        client_sequence: event.clientSequence, event_type: event.type, payload: event, payload_sha256: hash,
-        client_timestamp: event.clientTimestamp
-      }).select("server_receipt_timestamp").single();
-      if (error) { if(error.code==="P0001")rejected.push({eventId:event.eventId,reason:"Attempt evidence limit reached. Accepted and local work are preserved; contact your teacher."});else retryable.push(event.eventId); continue; }
-      acknowledgments.push({ eventId: event.eventId, serverReceiptTimestamp: inserted.server_receipt_timestamp });
+      prior.payloads.push(row.payload as Record<string, unknown>); prior.bySequence.set(event.clientSequence, row.payload as Record<string, unknown>); prior.latest = event.clientSequence;
+      if (validationError) rejected.push({ eventId: String(event.eventId), reason: validationError });
+      else acknowledgments.push({ eventId: event.eventId, serverReceiptTimestamp: inserted.server_receipt_timestamp });
     }
 
     const attemptIds = [...new Set(ordered.map((event) => event.attemptId))];
@@ -87,5 +134,5 @@ export default {
       if (!summaryError && summary.completed && owned.reporting_status === "reporting" && confirmed?.completed_at) completionReceipt = { status: "server_confirmed", completedAt: confirmed.completed_at, reportingAttemptId: id };
     }
     return Response.json({ acknowledgments, retryable, rejected, completionReceipt });
-  })
+  }))
 };

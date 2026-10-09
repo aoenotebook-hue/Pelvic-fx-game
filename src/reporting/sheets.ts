@@ -1,4 +1,5 @@
 import {getContent,latestContent} from "../content/registry.ts";
+import {answerFor} from "../games/answers.ts";
 import {deriveProgress} from "../domain/engine.ts";
 import {computeRewards} from "../domain/rewards.ts";
 import {learningEvidence,type EvidenceAttempt,type TeacherObservation} from "../domain/assessment.ts";
@@ -46,15 +47,15 @@ export function demoExamples(){
  const examples:SheetRow[]=[["Record ID","Label","Fictional ID","Scenario","First correct","Answered","Corrected","Unresolved","Missing","Reward","Complete","Interpretation"]];
  for(const scenario of ["registered_not_started","incomplete","unresolved","all_first_correct","all_corrected","mixed_corrected"]){
   const events:LearningEvent[]=[];const push=(data:Record<string,unknown>)=>{const event={eventId:`DEMO-${scenario}-${events.length}`,attemptId:`DEMO-${scenario}`,learnerId:"DEMO",contentVersion:content.id,clientSequence:events.length+1,clientTimestamp:"2026-10-08T00:00:00Z",serverReceiptTimestamp:"2026-10-08T00:00:01Z",...data} as LearningEvent;events.push(event);return event;};
-  const limit=scenario==="registered_not_started"?0:scenario==="incomplete"?3:scenario==="unresolved"?1:15;
   const sequence=content.missions.flatMap(mission=>mission.nodeIds.map(id=>content.nodes.find(node=>node.id===id)!));
+  const limit=scenario==="registered_not_started"?0:scenario==="incomplete"?3:scenario==="unresolved"?1:sequence.length;
   for(const [index,node] of sequence.slice(0,limit).entries()){
-   const correct=node.game!.targets![0],wrong=scenario==="all_corrected"||scenario==="unresolved"||scenario==="mixed_corrected"&&index%3===0,answer=wrong?node.game!.cards.find(card=>card.id!==correct)!.id:correct;
+   const wrong=scenario==="all_corrected"||scenario==="unresolved"||scenario==="mixed_corrected"&&index%3===0,correct=answerFor(node.game!,true),answer=answerFor(node.game!,!wrong);
    if(node.rationaleRequired)push({type:"handover_prepared",nodeId:node.id,text:"DEMO: discuss findings and request senior reassessment."});
    push({type:"core_response",nodeId:node.id,selectedOptionIds:[outcomeId(node.id,node.game!,answer)],presentationOrder:[],gameAnswer:answer,gameScore:evaluate(node.game!,answer).score,...(node.rationaleRequired?{rationale:"DEMO: discuss findings and request senior reassessment."}:{})});push({type:"feedback_ack",nodeId:node.id});
    if(wrong&&scenario!=="unresolved"){const correction=push({type:"correction_response",correctionId:node.retryId,selectedOptionId:outcomeId(node.retryId,node.game!,correct),gameAnswer:correct,gameScore:1,feedbackAcknowledged:false});push({type:"correction_feedback_ack",correctionId:node.retryId,responseEventId:correction.eventId});}
   }
-  if(limit===15)push({type:"reflection_submitted",text:"DEMO: three handovers reviewed."});
+  if(limit===sequence.length)push({type:"reflection_submitted",text:"DEMO: three handovers reviewed."});
   const p=deriveProgress(content,events),reward=computeRewards(content,events),evidence=learningEvidence(content,events);
   examples.push([`ptd:demo:${scenario}`,"DEMO",`DEMO-${String(examples.length).padStart(3,"0")}`,scenario,p.firstCorrectNodeIds.length,p.answeredNodeIds.length,p.correctedNodeIds.length,evidence.filter(e=>e.state==="unresolved").length,evidence.filter(e=>e.state==="missing").length,reward.total,p.locallyComplete,"Fictional learning evidence; excluded from real class totals. Discuss reasoning in class; rewards do not establish competence."]);
  }

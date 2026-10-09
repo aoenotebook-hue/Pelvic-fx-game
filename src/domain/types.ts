@@ -74,7 +74,13 @@ export interface Node {
   objectiveIds?: LOId[];
   sourceRefs?: {doc:"S"|"H"|"LP";page:number}[];
   reviewNote?: string;
-  stage?: "practice"|"boss"|"gauntlet";
+  stage?: "pretest"|"practice"|"boss"|"gauntlet";
+  /** Must be correct on the post-test (conjunctive pass standard). */
+  mustPass?: boolean;
+  /** Bloom level of the task, for item analysis. */
+  bloom?: "remember" | "understand" | "apply" | "analyse";
+  /** Newer guideline that differs from the lecture, shown to learners. */
+  guideline?: { en: string; th: string };
   translation?: {title:LocalText;story:LocalText;key:LocalText;why:LocalText};
   rationaleRequired?: boolean;
   explanationBeforeChoices?: boolean;
@@ -194,6 +200,9 @@ export interface CoreResponseEvent extends BaseEvent {
   rationale?: string;
   gameAnswer?: unknown;
   gameScore?: number;
+  /** Time on task (ms) and hint openings — analysis only, never scored. */
+  elapsedMs?: number;
+  hintsUsed?: number;
 }
 
 export interface FeedbackEvent extends BaseEvent { type: "feedback_ack"; nodeId: string; }
@@ -204,6 +213,9 @@ export interface CorrectionResponseEvent extends BaseEvent {
   feedbackAcknowledged: boolean;
   gameAnswer?: unknown;
   gameScore?: number;
+  /** Time on task (ms) and hint openings — analysis only, never scored. */
+  elapsedMs?: number;
+  hintsUsed?: number;
 }
 export interface ResourceEvent extends BaseEvent { type: "resource_viewed"; resourceId: string; nodeId?: string; stage?: "question" | "feedback" | "correction"; }
 export interface CorrectionAcknowledgment extends BaseEvent { type: "correction_feedback_ack"; correctionId: string; responseEventId: string; }
@@ -227,9 +239,11 @@ export interface TeacherReviewEvent extends BaseEvent {
   result: "resolved" | "unresolved";
 }
 export interface IssueReportEvent extends BaseEvent { type: "issue_reported"; nodeId: string | null; message: string; }
+/** End-of-course reaction survey (Kirkpatrick level 1). Ratings 1–5; never affects scores. */
+export interface CourseFeedbackEvent extends BaseEvent { type: "course_feedback"; usefulness: number; enjoyment: number; confidence: number; comment?: string; }
 
 export type LearningEvent = CoreResponseEvent | FeedbackEvent | CorrectionResponseEvent | ResourceEvent | CorrectionAcknowledgment | HandoverPrepared |
-  FinalAttemptEvent | FinalFeedbackEvent | FinalCorrectionEvent | ReflectionEvent | TeacherReviewEvent | IssueReportEvent;
+  FinalAttemptEvent | FinalFeedbackEvent | FinalCorrectionEvent | ReflectionEvent | TeacherReviewEvent | IssueReportEvent | CourseFeedbackEvent;
 
 export interface ConceptResolution { conceptId: SafetyConceptId; resolved: boolean; route: "initial" | "corrected" | "teacher" | "unresolved"; }
 export interface Reflection { attemptId: string; text: string; submittedAt: string; }

@@ -66,24 +66,26 @@ export function RewardPodium({
       ) : rows.length ? (
         <>
           <div className="podium">
-            {rows
-              .filter((row) => row.rank <= 3)
-              .map((row, index) => (
-                <div className={`podium-place place-${row.rank}`} key={index}>
+            {/* Classic podium order: 2nd, 1st, 3rd. */}
+            {[1, 0, 2]
+              .map((index) => rows.filter((row) => row.rank <= 3)[index])
+              .filter(Boolean)
+              .map((row) => (
+                <div className={`podium-place place-${row.rank}`} key={`${row.rank}:${row.label}`}>
                   <span className="podium-person">
                     {row.rank === 1 ? "★" : row.rank}
                   </span>
                   <strong>
                     {row.isCurrentLearner ? t("You", "คุณ") : row.label}
                   </strong>
-                  <small>{row.reward} reward</small>
+                  <small>{row.reward} {t("reward", "รางวัล")}</small>
                   <div>{row.rank}</div>
                 </div>
               ))}
           </div>
           <ol>
-            {rows.map((row, index) => (
-              <li key={index}>
+            {rows.map((row) => (
+              <li key={`${row.rank}:${row.label}`}>
                 {row.rank}. {row.isCurrentLearner ? t("You", "คุณ") : row.label}{" "}
                 — {row.reward}
               </li>
