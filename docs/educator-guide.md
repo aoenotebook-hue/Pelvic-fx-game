@@ -1,5 +1,7 @@
 # Educator guide
 
+For the 15-decision journey and separate teacher area with date-range reports, use the [focused edition guide](focused-edition-2026-10-08.md) and [release verification report](focused-release-verification-2026-10-08.md). Instructions below remain relevant to older saved attempts. The edition was educator-approved and published on 2026-10-08; production access and authenticated acceptance checks remain as recorded in the report.
+
 ## v0.9 class priorities and individual review
 
 Open Faculty workspace after authorized sign-in. Check participation and received status first; no received responses are not incorrect answers. Select the content version for comparison, review objective/concept denominators and common first-response misconceptions, then inspect the exact learner choices, correction history, contextual references, optional confidence and three handover reasons. Advice is authored; the teacher decides what fits. Free text is not automatically graded.
@@ -53,3 +55,10 @@ The local demo never emails or uploads a report. Automatic email delivery is int
 The game content and each reference card were cross-checked against the supplied CNMI pelvic-injury teaching plan, the 2024 medical-student pelvic-fracture slide set, and the Thai pelvic-fracture teaching handout. Learners can open local copies of all three PDFs from each relevant card. Selected anatomy, AP-review, associated-injury and binder-positioning figures are reproduced with source-page links; the header institutional marks were cropped from the supplied slide set. Patient photographs, operative images and unapproved diagnostic case images were not republished. Clinical reviewers must approve the adapted wording, each selected figure and all institutional image use before learner release.
 
 The emergency-room scene, learner characters and bed-bound patient characters are fictional, non-graphic game art. They do not represent clinical findings or calculate outcomes. Correct responses trigger a visible positive reaction and progressive badges; incorrect responses trigger a pause-and-review reaction without simulated deterioration.
+# Learner entry and spreadsheet reporting update
+
+Student entry uses self-reported email and Student ID. Faculty sign-in and assigned-cohort permissions remain separate. Participation counts registered learners, including those without received answers; they cannot count students who never registered.
+
+Use date filters to choose your class briefing, open actual answers and three handovers, and record observations/advice in the protected teacher area. Reset attempts are practice and preserve the original assessed evidence. Rewards and clothing describe progress; first-answer performance, correction review and teacher observations describe different evidence.
+
+**Sync to Google Sheets** queues delivery to your existing workbook. Configure the dedicated Google service account and Vault scheduler values using [setup instructions](learner-entry-sheets-setup.md). CSV downloads remain available while Sheets configuration is pending. Six fictional examples will be placed only on Demo Examples after the first successful delivery; they do not contribute to class totals.

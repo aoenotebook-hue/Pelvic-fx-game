@@ -1,5 +1,7 @@
 # Student guide
 
+For new 15-decision attempts, use the [focused edition instructions](focused-edition-2026-10-08.md). Older saved attempts keep their original questions. The new edition was educator-approved and published on 2026-10-08; live access checks are documented in the release report.
+
 ## New learning journey
 
 Keep the team role: read the supplied update and choose an action. At the three handovers, write one short reason connecting findings, priorities and uncertainty **before** revealing choices. References and the patient chart stay available. Confidence is optional and never affects rewards.
@@ -31,3 +33,10 @@ Hold a direction key or touch button to walk; release it to stop. Keyboard activ
 You may pause, close and resume on the same device. Pausing and lower confidence do not reduce points. A wrong answer opens learning; it does not harm a simulated patient or erase progress. Installation is optional. Browser storage can be cleared or evicted, so sync when connected.
 
 This activity reviews reasoning for a supervised role. It is a formative case journey, not a pre-class examination. It does not certify binder application, independent trauma management or procedural competence. Use your institution's approved local pathway in real care.
+# Email-and-ID entry, account and movement update
+
+Enter your email address and Student ID, then choose **Enter game**. Keep leading zeros in your ID. Use exactly the same details on another device to resume accepted work. Your identity is self-reported: anyone knowing both details can reopen it. First entry and cross-device retrieval need a connection; unsent work stays on the device where it was created.
+
+Your Student ID appears at the top. Open **Account** for My progress, Sync now, Reset progress and Sign out. **Reset progress** starts a new practice attempt with zero rewards; assessed answers and unsent work are retained. Practice does not replace your assessed result or appear on the official podium.
+
+Drag the round joystick to walk. A longer drag moves faster. Release to stop. Arrow keys/WASD remain available. Approach a patient and choose Enter case. Conflicting submissions from another device preserve accepted answers and appear for review; do not erase local storage to resolve them.

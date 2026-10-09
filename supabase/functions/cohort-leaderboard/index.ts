@@ -9,7 +9,8 @@ const fail = (message: string, status = 400) => Response.json({ error: message }
 export default {
   fetch: withSupabase({ auth: "user" }, async (request, ctx) => {
     if (request.method !== "POST") return fail("Method not allowed", 405);
-    const body = await request.json() as { courseId?: string; contentVersion?: string };
+    let body:{ courseId?: string; contentVersion?: string };try{body=await request.json();}catch{return fail("Invalid JSON");}
+    if(!body||typeof body!=="object"||Array.isArray(body))return fail("Invalid request");
     const userId = ctx.userClaims?.id;
     if (!userId || !body.courseId || !body.contentVersion || !supportedVersion(body.contentVersion)) return fail("Invalid request");
 

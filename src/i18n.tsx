@@ -2,6 +2,7 @@ import { createContext, useContext } from "react";
 import type { CorrectionItem, Mission, Node, Resource } from "./domain/types";
 import { REVISION_ID, revisionById, revisedMissionThai } from "./content/content.v2";
 import { LEARNING_VERSION, learningRevisionById, teachingThaiById } from "./content/content.v3";
+import { FOCUSED_VERSION } from "./games/spec";
 
 export type Language = "en" | "th";
 
@@ -129,6 +130,7 @@ export function localizeMission(mission: Mission, language: Language): Mission {
 }
 
 export function localizeNode(node: Node, language: Language): Node {
+  if (node.contentVersion === FOCUSED_VERSION && language === "th") return { ...node, stem: node.translation!.story.th, question: node.translation!.title.th, teaching: teachingThaiById.get(node.id) ?? node.teaching };
   if(node.translation)return {...node,stem:node.translation.story[language],question:node.translation.title[language],teaching:node.teaching?{...node.teaching,keyMessage:node.translation.key[language],suggestedFeedback:node.translation.key[language]}:undefined};
   const revision = (node.contentVersion === LEARNING_VERSION ? learningRevisionById : revisionById).get(node.id);
   if (language === "th" && [REVISION_ID, LEARNING_VERSION].includes(node.contentVersion) && revision) {

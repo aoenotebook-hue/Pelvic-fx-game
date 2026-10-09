@@ -1,4 +1,4 @@
-import { pelvicTraumaContentV2, revisions } from "./content.v2";
+import { pelvicTraumaContentV2, revisions } from "./content.v2.ts";
 import type { ContentVersion, Node } from "../domain/types";
 export const LEARNING_VERSION = "ptd-learning-draft-2026-10-03";
 export const teachingBlueprint: Record<string, NonNullable<Node["teaching"]>> = {

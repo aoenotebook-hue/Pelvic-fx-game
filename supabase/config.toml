@@ -1,5 +1,25 @@
 project_id = "pelvic-trauma-decisions"
 
+[functions.learner-entry]
+verify_jwt = false
+import_map = "./functions/import_map.json"
+
+[functions.learner-context]
+verify_jwt = true
+import_map = "./functions/import_map.json"
+
+[functions.learner-attempts]
+verify_jwt = true
+import_map = "./functions/import_map.json"
+
+[functions.sheets-status]
+verify_jwt = true
+import_map = "./functions/import_map.json"
+
+[functions.sheets-worker]
+verify_jwt = false
+import_map = "./functions/import_map.json"
+
 [functions.sync-events]
 verify_jwt = true
 import_map = "./functions/import_map.json"

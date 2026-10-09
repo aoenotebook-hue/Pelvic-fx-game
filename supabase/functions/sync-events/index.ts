@@ -2,6 +2,8 @@ import { withSupabase } from "npm:@supabase/server@1.9.1";
 import { validateLearnerEvent, recomputeServerSummary, serverRules } from "../../../src/domain/serverRules.ts";
 import {validateLearningSequence} from "../../../src/domain/learningRules.ts";
 import type {LearningEvent} from "../../../src/domain/types.ts";
+import {readAttemptEvents} from "../_shared/read.ts";
+import {canonicalEventJson} from "../_shared/eventHash.ts";
 
 type IncomingEvent = {
   eventId: string; attemptId: string; learnerId: string; contentVersion: string; clientSequence: number;
@@ -10,8 +12,8 @@ type IncomingEvent = {
 };
 
 function reject(message: string, status = 400) { return Response.json({ error: message }, { status }); }
-async function sha256(value: unknown) {
-  const bytes = new TextEncoder().encode(JSON.stringify(value));
+async function sha256(value: Record<string, unknown>) {
+  const bytes = new TextEncoder().encode(canonicalEventJson(value));
   return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -22,9 +24,12 @@ export default {
     if (new TextEncoder().encode(raw).length > serverRules.maxBatchBytes) return reject("Batch is too large", 413);
     let body: { courseId?: string; events?: IncomingEvent[] };
     try { body = JSON.parse(raw); } catch { return reject("Invalid JSON"); }
-    if (!body.courseId || !Array.isArray(body.events) || body.events.length > serverRules.maxBatchEvents) return reject("Invalid batch");
+    if (!body || !body.courseId || !Array.isArray(body.events) || body.events.length > serverRules.maxBatchEvents) return reject("Invalid batch");
     const userId = ctx.userClaims?.id;
     if (!userId) return reject("Authentication required", 401);
+    const limit=await ctx.supabaseAdmin.rpc("allow_learner_entry",{bucket_key:`sync:${userId}`,maximum:120});
+    if(limit.error)return reject("Submission service unavailable",503);
+    if(limit.data!==true)return reject("Too many submissions. Your local work is preserved; retry shortly.",429);
 
     const acknowledgments: Array<{ eventId: string; serverReceiptTimestamp: string }> = [];
     const retryable: string[] = [];
@@ -40,20 +45,20 @@ export default {
       if (validationError) { rejected.push({eventId:event.eventId,reason:validationError}); continue; }
 
       const hash = await sha256(event);
-      const { data: existing } = await ctx.supabaseAdmin.from("response_events").select("payload_sha256,server_receipt_timestamp").eq("user_id", userId).eq("attempt_id", event.attemptId).eq("event_id", event.eventId).maybeSingle();
+      const { data: existing } = await ctx.supabaseAdmin.from("response_events").select("payload,server_receipt_timestamp").eq("user_id", userId).eq("attempt_id", event.attemptId).eq("event_id", event.eventId).maybeSingle();
       if (existing) {
-        if (existing.payload_sha256 !== hash) rejected.push({ eventId: event.eventId, reason: "Event ID was reused with altered data" });
+        if (canonicalEventJson(existing.payload) !== canonicalEventJson(event)) rejected.push({ eventId: event.eventId, reason: "Event ID was reused with altered data" });
         else acknowledgments.push({ eventId: event.eventId, serverReceiptTimestamp: existing.server_receipt_timestamp });
         continue;
       }
 
       const { data: attempt } = await ctx.supabaseAdmin.from("attempts").select("id,user_id,course_id,content_version").eq("id", event.attemptId).eq("user_id", userId).eq("course_id", body.courseId).maybeSingle();
       if (!attempt || attempt.content_version !== event.contentVersion) { rejected.push({ eventId: event.eventId, reason: "Attempt ownership or version mismatch" }); continue; }
-      const {data:prior,error:priorError}=await ctx.supabaseAdmin.from("response_events").select("payload").eq("attempt_id",event.attemptId).order("client_sequence");
-      if(priorError){retryable.push(event.eventId);continue;}
+      let prior;try{prior=await readAttemptEvents(ctx.supabaseAdmin,event.attemptId,userId);}catch{retryable.push(event.eventId);continue;}
       const sequenceError=validateLearningSequence(event as unknown as LearningEvent,(prior??[]).map(row=>row.payload));
       if(sequenceError){rejected.push({eventId:event.eventId,reason:sequenceError});continue;}
       const { data: latest } = await ctx.supabaseAdmin.from("response_events").select("client_sequence").eq("attempt_id", event.attemptId).order("client_sequence", { ascending: false }).limit(1).maybeSingle();
+      if(event.clientSequence<=(latest?.client_sequence??0)){rejected.push({eventId:event.eventId,reason:"Another device already submitted this sequence. Accepted answers are preserved; ask your teacher to review the local conflict."});continue;}
       if (event.clientSequence > (latest?.client_sequence ?? 0) + 1) { retryable.push(event.eventId); continue; }
 
       const { data: inserted, error } = await ctx.supabaseAdmin.from("response_events").insert({
@@ -61,7 +66,7 @@ export default {
         client_sequence: event.clientSequence, event_type: event.type, payload: event, payload_sha256: hash,
         client_timestamp: event.clientTimestamp
       }).select("server_receipt_timestamp").single();
-      if (error) { retryable.push(event.eventId); continue; }
+      if (error) { if(error.code==="P0001")rejected.push({eventId:event.eventId,reason:"Attempt evidence limit reached. Accepted and local work are preserved; contact your teacher."});else retryable.push(event.eventId); continue; }
       acknowledgments.push({ eventId: event.eventId, serverReceiptTimestamp: inserted.server_receipt_timestamp });
     }
 
@@ -70,11 +75,15 @@ export default {
     for (const id of attemptIds) {
       const { data: owned } = await ctx.supabaseAdmin.from("attempts").select("content_version,reporting_status").eq("id",id).eq("user_id",userId).eq("course_id",body.courseId).maybeSingle();
       if (!owned) continue;
-      const { data: stored, error: readError } = await ctx.supabaseAdmin.from("response_events").select("payload,server_receipt_timestamp").eq("attempt_id", id).eq("user_id",userId).order("client_sequence", { ascending: true });
-      if (readError) continue;
+      const {data:current}=await ctx.supabaseAdmin.from("attempt_summaries").select("last_event_at,completed,completed_at").eq("attempt_id",id).maybeSingle();
+      const {data:latest}=await ctx.supabaseAdmin.from("response_events").select("server_receipt_timestamp").eq("attempt_id",id).eq("user_id",userId).order("client_sequence",{ascending:false}).limit(1).maybeSingle();
+      if(current&&current.last_event_at===(latest?.server_receipt_timestamp??null)){
+        if(current.completed&&current.completed_at&&owned.reporting_status==="reporting")completionReceipt={status:"server_confirmed",completedAt:current.completed_at,reportingAttemptId:id};
+        continue;
+      }
+      let stored;try{stored=await readAttemptEvents(ctx.supabaseAdmin,id,userId);}catch{continue;}
       const summary = recomputeServerSummary((stored ?? []).map((row) => row.payload),owned.content_version);
-      summary.last_event_at=stored?.at(-1)?.server_receipt_timestamp??null;
-      const {data:confirmed,error: summaryError} = await ctx.supabaseAdmin.from("attempt_summaries").upsert({ attempt_id: id, ...summary }, { onConflict: "attempt_id" }).select("completed_at").single();
+      const {data:confirmed,error: summaryError} = await ctx.supabaseAdmin.from("attempt_summaries").upsert({ attempt_id: id, ...summary,last_event_at:stored.at(-1)?.server_receipt_timestamp??null }, { onConflict: "attempt_id" }).select("completed_at").single();
       if (!summaryError && summary.completed && owned.reporting_status === "reporting" && confirmed?.completed_at) completionReceipt = { status: "server_confirmed", completedAt: confirmed.completed_at, reportingAttemptId: id };
     }
     return Response.json({ acknowledgments, retryable, rejected, completionReceipt });

@@ -7,7 +7,8 @@ select { max-width:100%; padding:.7rem; border:1px solid #ccd8df; border-radius:
 @media print {
  body.print-class-briefing .app-shell {display:block!important;}
  body.print-class-briefing #main-content {margin:0!important;padding:0!important;width:100%!important;}
- body.print-class-briefing .topbar,body.print-class-briefing .sidebar,body.print-class-briefing .notice,body.print-class-briefing footer {display:none!important;}
+ body.print-class-briefing .topbar,body.print-class-briefing .side-nav,body.print-class-briefing .notice,body.print-class-briefing footer,body.print-class-briefing .global-progress {display:none!important;}
+ body.print-class-briefing .layout {display:block!important;}
  body.print-class-briefing #main-content > section > :not(.class-briefing) {display:none!important;}
  body.print-class-briefing .version-resume,body.print-class-briefing .nav-sync {display:none!important;}
  body.print-class-briefing .staff-private,body.print-class-briefing button {display:none!important;}
@@ -28,6 +29,21 @@ select { max-width:100%; padding:.7rem; border:1px solid #ccd8df; border-radius:
   font-weight: 900;
 }
 .language-toggle:hover { background: rgba(255,255,255,.18); }
+
+.account-menu { position:relative; padding:0; border:0; background:transparent; color:white; }
+.account-menu > summary { display:flex; align-items:center; gap:6px; cursor:pointer; min-height:44px; padding:6px 10px; border:1px solid rgba(255,255,255,.42); border-radius:11px; list-style:none; font-weight:700; }
+.account-menu > summary::-webkit-details-marker { display:none; }
+.account-menu > summary:focus-visible { outline:3px solid #8de4d7; outline-offset:3px; }
+.account-panel { position:absolute; top:calc(100% + 8px); right:0; width:min(290px,calc(100vw - 24px)); padding:18px; border:1px solid var(--line); border-radius:14px; background:var(--paper); color:var(--ink); box-shadow:var(--shadow); z-index:60; }
+.account-panel p { font-size:.9rem; line-height:1.5; margin:10px 0; }
+.account-panel small { display:block; margin-top:10px; color:var(--muted); }
+.account-panel [role="alert"] { color:#a13225; }
+.signed-out-layout { grid-template-columns:1fr; }
+@media (max-width:380px) {
+  .account-menu > summary { min-width:44px; justify-content:center; padding:6px; }
+  .account-menu > summary > span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+  .topbar { gap:8px; }
+}
 
 .reading input[type="email"] {
   width: 100%;
@@ -663,3 +679,21 @@ select { max-width:100%; padding:.7rem; border:1px solid #ccd8df; border-radius:
 }
 .encounter-strip .encounter-patient { animation: none; }
 .version-resume { padding: .75rem; background: #fff1d9; border: 1px solid #e3c898; border-radius: 10px; display: flex; gap: .7rem; flex-wrap: wrap; align-items: center; }
+/* Account controls and analogue movement keep clear of clinical artwork. */
+.student-id{font-size:.8rem;font-weight:650;white-space:nowrap}
+.reset-backdrop{position:fixed;inset:0;background:#102b3e90;z-index:150;display:grid;place-items:center;padding:20px}
+.reset-dialog{background:white;border-radius:18px;padding:24px;width:min(440px,100%);box-shadow:0 16px 60px #0004}
+.reset-dialog button{margin:8px 8px 0 0}
+.reset-dialog::backdrop{background:#102b3e90}
+.joystick{position:relative;flex:0 0 112px;width:112px;height:112px;border-radius:50%;background:#e0eaf0;border:3px solid #a9bdca;touch-action:none;user-select:none;display:grid;place-items:center}
+.joystick-cross{color:#829ba9;font-size:60px;line-height:1}
+.joystick-knob{position:absolute;width:42px;height:42px;border-radius:50%;background:#28657e;border:3px solid white;box-shadow:0 3px 7px #163b5140;pointer-events:none}
+@media(max-width:600px){.student-id{font-size:.7rem}.joystick{flex-basis:96px;width:96px;height:96px}.status-cluster{flex-wrap:wrap}}
+@media(max-width:1300px){
+ .topbar{height:auto;min-height:100px;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:10px 16px;position:relative}
+ .brand-lockup{width:100%;min-width:0;justify-content:flex-start}
+ .brand{min-width:0;flex:1}.brand strong{font-size:.95rem}.brand-mark{flex-shrink:0}
+ .status-cluster{width:100%;justify-content:flex-end;flex-wrap:wrap;gap:10px}
+ .student-id{margin-right:auto;white-space:normal;overflow-wrap:anywhere}
+ .notice{top:0}.account-panel{max-width:calc(100vw - 24px)}
+}

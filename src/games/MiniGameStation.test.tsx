@@ -9,6 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MiniGameStation } from "./MiniGameStation";
 import { pelvicTraumaContentV4 as content } from "../content/content.v4";
+import { pelvicTraumaContentV5 } from "../content/content.v5";
 import type { LearningEvent, Node } from "../domain/types";
 const { settings } = vi.hoisted(() => ({
   settings: new Map<string, { key: string; value: unknown }>(),
@@ -58,7 +59,7 @@ function Harness({
       partition="test"
       onNext={() => undefined}
       emit={async (data) => {
-        const event = { ...base(++sequence.current), ...data } as LearningEvent;
+        const event = { ...base(++sequence.current), contentVersion: item.contentVersion, ...data } as LearningEvent;
         setEvents((previous) => [...previous, event]);
         return true;
       }}
@@ -68,6 +69,17 @@ function Harness({
 beforeEach(() => settings.clear());
 afterEach(cleanup);
 describe("station learning transitions", () => {
+  it("shows three action choices and enables confirmation only after selecting an action in the focused edition", async () => {
+    const item = pelvicTraumaContentV5.nodes.find(n => n.id === "M1N1")!;
+    render(<Harness item={item} />);
+    const board = await screen.findByRole("region", { name: item.game!.instruction.en });
+    expect(board.querySelectorAll("button")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "Check my work" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: item.game!.cards.find(c => item.game!.targets!.includes(c.id))!.label.en }));
+    expect(screen.getByRole("button", { name: "Check my work" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Check my work" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "I reviewed the evidence" })).toBeInTheDocument());
+  });
   it("requires explanation from memory before SBAR choices appear", async () => {
     render(
       <Harness item={content.nodes.find((node) => node.id === "C1S7")!} />,
