@@ -439,6 +439,12 @@ export function MiniGameJourney({
               )
             : t("Finish shift", "จบเวร")}
         </button>
+        {p.reflection && !events.some((e) => e.type === "course_feedback") && (
+          <CourseFeedback emit={emit} />
+        )}
+        {events.some((e) => e.type === "course_feedback") && (
+          <p className="hint-line">{t("Thank you — your feedback was saved.", "ขอบคุณ — บันทึกความคิดเห็นแล้ว")}</p>
+        )}
         <button className="secondary" onClick={() => setPanel("hub")}>
           {t("Return to the room", "กลับห้องฉุกเฉิน")}
         </button>
@@ -460,6 +466,17 @@ export function MiniGameJourney({
               "About 5 minutes. No hints, no penalty — it shows your teacher (and you) where you start.",
               "ประมาณ 5 นาที ไม่มีคำใบ้ ไม่มีการหักคะแนน ช่วยให้อาจารย์ (และคุณ) เห็นจุดเริ่มต้น",
             )}
+          </p>
+          <button
+            className="primary"
+            onClick={() => setNodeId(pretest.nodeIds.find((id) => !p.answeredNodeIds.includes(id)) ?? pretest.nodeIds[0])}
+          >
+            {p.answeredNodeIds.some((id) => pretest.nodeIds.includes(id))
+              ? t("Continue the pre-test", "ทำแบบทดสอบก่อนเรียนต่อ")
+              : t("Start the pre-test", "เริ่มแบบทดสอบก่อนเรียน")}
+          </button>
+        </article>
+      )}
       <p>
         {t(
           "8-item pre-test → 24 practice stations + four 3-card boss rounds → 8-item post-test. Begin with the pre-test, then Pelvis Academy.",
@@ -472,17 +489,6 @@ export function MiniGameJourney({
           "ฉบับร่าง: ต้องอนุมัติเนื้อหาและภาพก่อนใช้กับนักศึกษา",
         )}
       </p>
-          </p>
-          <button
-            className="primary"
-            onClick={() => setNodeId(pretest.nodeIds.find((id) => !p.answeredNodeIds.includes(id)) ?? pretest.nodeIds[0])}
-          >
-            {p.answeredNodeIds.some((id) => pretest.nodeIds.includes(id))
-              ? t("Continue the pre-test", "ทำแบบทดสอบก่อนเรียนต่อ")
-              : t("Start the pre-test", "เริ่มแบบทดสอบก่อนเรียน")}
-          </button>
-        </article>
-      )}
       <div className="mini-hud">
         <strong>
           {reward.total}/{reward.maximum} {t("reward", "รางวัล")}
@@ -665,5 +671,52 @@ export function MiniGameJourney({
       </button>
       {hubFooter}
     </section>
+  );
+}
+
+/** Three 1–5 ratings and an optional comment (Kirkpatrick level 1). Does not change any score. */
+function CourseFeedback({ emit }: { emit(data: Record<string, unknown>): Promise<boolean> }) {
+  const { language } = useLanguage();
+  const t = (en: string, th: string) => (language === "th" ? th : en);
+  const [ratings, setRatings] = useState<Record<string, number>>({});
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const items: Array<[string, string, string]> = [
+    ["usefulness", "This game helped me learn pelvic trauma care", "เกมนี้ช่วยให้เรียนรู้การดูแลผู้บาดเจ็บเชิงกราน"],
+    ["enjoyment", "I enjoyed playing it", "สนุกกับการเล่น"],
+    ["confidence", "I feel more confident for the class and the ward", "มั่นใจมากขึ้นสำหรับชั้นเรียนและการขึ้นวอร์ด"],
+  ];
+  const complete = items.every(([id]) => ratings[id]);
+  return (
+    <article className="panel course-feedback">
+      <h2>{t("Quick feedback (1 minute, optional)", "ความคิดเห็นสั้นๆ (1 นาที ไม่บังคับ)")}</h2>
+      <p className="hint-line">{t("1 = strongly disagree … 5 = strongly agree. This never changes your score.", "1 = ไม่เห็นด้วยอย่างยิ่ง … 5 = เห็นด้วยอย่างยิ่ง ไม่มีผลต่อคะแนน")}</p>
+      {items.map(([id, en, th]) => (
+        <fieldset key={id} className="likert">
+          <legend>{t(en, th)}</legend>
+          {[1, 2, 3, 4, 5].map((value) => (
+            <label key={value}>
+              <input type="radio" name={id} checked={ratings[id] === value} onChange={() => setRatings((current) => ({ ...current, [id]: value }))} />
+              {value}
+            </label>
+          ))}
+        </fieldset>
+      ))}
+      <label>
+        {t("Anything to improve? (optional)", "มีอะไรควรปรับปรุง? (ไม่บังคับ)")}
+        <textarea maxLength={800} value={comment} onChange={(event) => setComment(event.target.value)} />
+      </label>
+      <button
+        className="primary"
+        disabled={!complete || busy}
+        onClick={async () => {
+          setBusy(true);
+          await emit({ type: "course_feedback", usefulness: ratings.usefulness, enjoyment: ratings.enjoyment, confidence: ratings.confidence, ...(comment.trim() ? { comment: comment.trim() } : {}) });
+          setBusy(false);
+        }}
+      >
+        {t("Send feedback", "ส่งความคิดเห็น")}
+      </button>
+    </article>
   );
 }

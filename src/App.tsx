@@ -17,7 +17,7 @@ import { clearAccountData, importServerEvents, acknowledgeEvents, hasCompletionR
 import { createBackendAdapter } from "./sync/adapter";
 import { validateLearnerEvent } from "./domain/serverRules";
 
-const SYNCED_TYPES = new Set(["core_response","correction_response","feedback_ack","correction_feedback_ack","handover_prepared","resource_viewed","reflection_submitted"]);
+const SYNCED_TYPES = new Set(["core_response","correction_response","feedback_ack","correction_feedback_ack","handover_prepared","resource_viewed","reflection_submitted","course_feedback"]);
 import type { LeaderboardRow } from "./sync/adapter";
 import { createBaseEvent, setActiveLearnerId, setActiveContentVersion } from "./utils/events";
 import { I18nContext, isProblemNotice, localizeNotice, localizeCorrection, localizeMission, localizeNode, localizeResource, t, useLanguage, type Language } from "./i18n";

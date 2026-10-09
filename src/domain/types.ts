@@ -239,9 +239,11 @@ export interface TeacherReviewEvent extends BaseEvent {
   result: "resolved" | "unresolved";
 }
 export interface IssueReportEvent extends BaseEvent { type: "issue_reported"; nodeId: string | null; message: string; }
+/** End-of-course reaction survey (Kirkpatrick level 1). Ratings 1–5; never affects scores. */
+export interface CourseFeedbackEvent extends BaseEvent { type: "course_feedback"; usefulness: number; enjoyment: number; confidence: number; comment?: string; }
 
 export type LearningEvent = CoreResponseEvent | FeedbackEvent | CorrectionResponseEvent | ResourceEvent | CorrectionAcknowledgment | HandoverPrepared |
-  FinalAttemptEvent | FinalFeedbackEvent | FinalCorrectionEvent | ReflectionEvent | TeacherReviewEvent | IssueReportEvent;
+  FinalAttemptEvent | FinalFeedbackEvent | FinalCorrectionEvent | ReflectionEvent | TeacherReviewEvent | IssueReportEvent | CourseFeedbackEvent;
 
 export interface ConceptResolution { conceptId: SafetyConceptId; resolved: boolean; route: "initial" | "corrected" | "teacher" | "unresolved"; }
 export interface Reflection { attemptId: string; text: string; submittedAt: string; }

@@ -97,6 +97,7 @@ function validateMiniGameEvent(event:Record<string,unknown>):string|null {
  if(event.type==="resource_viewed")return pelvicTraumaContentV4.resources.some(r=>r.id===event.resourceId)&&(!event.nodeId||Boolean(node))?null:"Unknown reference";
  if(event.type==="reflection_submitted")return typeof event.text==="string"&&event.text.trim()&&event.text.length<=1500?null:"Invalid shift review";
  if(event.type==="issue_reported")return typeof event.message==="string"&&event.message.length<=800?null:"Invalid issue";
+ if(event.type==="course_feedback"){const rating=(value:unknown)=>Number.isInteger(value)&&Number(value)>=1&&Number(value)<=5;return rating(event.usefulness)&&rating(event.enjoyment)&&rating(event.confidence)&&(event.comment===undefined||(typeof event.comment==="string"&&event.comment.length<=800))?null:"Invalid course feedback";}
  return "Unauthorized event type";
 }
 function learningSummary(events:ServerEvent[]) {

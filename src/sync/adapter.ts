@@ -62,6 +62,8 @@ export interface BackendAdapter {
   mfaStatus?():Promise<MfaStatus>;
   mfaEnroll?():Promise<{factorId:string;qrCode:string;secret:string}>;
   mfaVerify?(factorId:string,code:string):Promise<void>;
+  /** Teacher evaluation workbook: "rows" returns every tab; "push" writes them to the configured Google Sheet. */
+  sheetExport?(operation:"rows"|"push"):Promise<{tabs?:Record<string,unknown[][]>;pushed?:boolean;attempts?:number}>;
 }
 
 export interface MfaStatus { verified: boolean; factorId: string | null; }
@@ -105,6 +107,12 @@ export class SupabaseBackendAdapter implements BackendAdapter {
     const client = await this.clientPromise;
     const { error } = await client.auth.mfa.challengeAndVerify({ factorId, code });
     if (error) throw error;
+  }
+  async sheetExport(operation: "rows" | "push") {
+    const client = await this.clientPromise;
+    const { data, error } = await client.functions.invoke("sheet-export", { body: { courseId: appConfig.courseId, operation } });
+    if (error) throw error;
+    return data;
   }
   async recoverCompletion(attemptId:string) { const client=await this.clientPromise; const {data,error}=await client.functions.invoke("completion-status",{body:{courseId:appConfig.courseId,attemptId}});if(error)throw error;return data.completionReceipt as SyncResult["completionReceipt"]; }
   async signIn(email: string) {
