@@ -73,7 +73,7 @@ export interface BackendAdapter {
   mfaEnroll?():Promise<{factorId:string;qrCode:string;secret:string}>;
   mfaVerify?(factorId:string,code:string):Promise<void>;
   /** Teacher evaluation workbook: "rows" returns every tab; "push" writes them to the configured Google Sheet. */
-  sheetExport?(operation:"rows"|"push"):Promise<{tabs?:Record<string,unknown[][]>;pushed?:boolean;attempts?:number}>;
+  sheetExport?(operation:"rows"):Promise<{tabs?:Record<string,unknown[][]>}>;
 }
 
 export interface MfaStatus { verified: boolean; factorId: string | null; }
@@ -145,7 +145,7 @@ export class SupabaseBackendAdapter implements BackendAdapter {
     const { error } = await client.auth.mfa.challengeAndVerify({ factorId, code });
     if (error) throw error;
   }
-  async sheetExport(operation: "rows" | "push") {
+  async sheetExport(operation: "rows") {
     const { data, error } = await this.invokeUser("sheet-export", { courseId: appConfig.courseId, operation });
     if (error) throw error;
     return data;

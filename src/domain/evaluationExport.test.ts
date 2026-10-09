@@ -83,6 +83,18 @@ describe("evaluation workbook", () => {
     expect(new Set(book.responses.filter((row) => row[1] === "S003").map((row) => row[18]))).toEqual(new Set(["lower"]));
   });
 
+  it("computes item analysis, objective summary and the dashboard", () => {
+    const item = book.items.find((row) => row[0] === post[0].id)!;
+    expect(item[1]).toBe("post-test");
+    expect(item[5]).toBe(4); // S001–S004; QA, practice and manually excluded learners are left out
+    const dash = Object.fromEntries(book.dashboard.map((row) => [row[0], row[1]]));
+    expect(dash["Enrolled learners"]).toBe(8);
+    expect(dash["Finished the post-test"]).toBe(4);
+    expect(dash["Met the pass standard"]).toBe(3);
+    expect(book.objectives.map((row) => row[0])).toEqual(["LO1", "LO2", "LO3", "LO4", "LO5", "LO6", "LO7"]);
+    expect(book.objectives.every((row) => row.length === EVALUATION_TABS.objectives.headers.length)).toBe(true);
+  });
+
   it("names specific mistakes for the debrief", () => {
     expect(book.misconceptions.length).toBeGreaterThan(0);
     expect(book.misconceptions.every((row) => typeof row[3] === "string" && !(row[3] as string).startsWith("misplaced_"))).toBe(true);

@@ -1,6 +1,29 @@
 import {createClient,type SupabaseClient} from "npm:@supabase/supabase-js@2";
 import {buildSheetRows,demoExamples,type SheetAttempt,type SheetLearner} from "../../../src/reporting/sheets.ts";
 import {GoogleWorkbook,googleAccessToken} from "./google.ts";
+import {latestContent} from "../../../src/content/registry.ts";
+import {buildEvaluationWorkbook,EVALUATION_TABS,TEACHER_TABS,tabValues} from "../../../src/domain/evaluationExport.ts";
+import type {TeacherObservation} from "../../../src/domain/assessment.ts";
+
+// Evaluation tabs written next to the class tabs. Handovers / Teacher Reviews already exist as class tabs.
+const evaluationKeys=["dashboard","objectives","items","attempts","responses","cohorts","misconceptions","feedback","roster"] as const;
+async function syncEvaluation(workbook:GoogleWorkbook,attempts:SheetAttempt[],learners:SheetLearner[],reviews:TeacherObservation[]){
+ await workbook.ensureEvaluationTabs(evaluationKeys.map(key=>EVALUATION_TABS[key].name),Object.values(TEACHER_TABS));
+ // Teacher-owned tabs: exclusions are read, handover scores are appended but never overwritten.
+ const exclusions=await workbook.read(`'${TEACHER_TABS.exclusions.name}'!A2:B`);
+ const manualExclusions=new Map(exclusions.filter(row=>row[0]).map(row=>[String(row[0]).trim(),String(row[1]??"manual exclusion")]));
+ const book=buildEvaluationWorkbook({content:latestContent,attempts:attempts.map(a=>({attemptId:a.attemptId,learnerId:a.learnerId,cohortId:a.cohortId,contentVersion:a.contentVersion,reportingStatus:a.reportingStatus,events:a.events,completedAt:a.completedAt})),roster:learners.map(l=>({learnerId:l.studentId,cohortId:l.cohortId})),reviews,manualExclusions});
+ for(const key of evaluationKeys){
+  const rows=tabValues(book,key).map(row=>row.map(cell=>cell??""));
+  const formulas=key==="cohorts"?rows.flatMap((row,r)=>row.map((cell,c)=>({row:r,col:c,cell})).filter(item=>item.row!==0&&typeof item.cell==="string"&&/^=IF\(J\d+>0,TDIST\(ABS\(I\d+\),J\d+,2\),""\)$/.test(item.cell))):[];
+  await workbook.replace(EVALUATION_TABS[key].name,rows,formulas.map(({row,col})=>({row,col})));
+ }
+ const scored=new Set((await workbook.read(`'${TEACHER_TABS.handoverScoring.name}'!A2:A`)).map(row=>String(row[0])));
+ // The teacher fills S, B, A, R (0–2 each); the Total column is theirs to sum.
+ const fresh=book.handovers.filter(row=>!scored.has(String(row[0]))&&!row[8]).map(row=>[String(row[0]),String(row[1]),String(row[4]),String(row[5])]);
+ await workbook.append(TEACHER_TABS.handoverScoring.name,fresh);
+ return {tabs:evaluationKeys.length,newHandovers:fresh.length};
+}
 async function allRows(client:SupabaseClient,table:string,columns:string,key:string,ids:string[]){const result:Record<string,any>[]=[];if(!ids.length)return result;for(let offset=0;;offset+=500){const page=await client.from(table).select(columns).in(key,ids).order(table==="response_events"?"id":table==="attempt_summaries"?"attempt_id":table==="learner_profiles"?"user_id":"id").range(offset,offset+499);if(page.error)throw new Error(`Export data unavailable: ${table}`);result.push(...page.data as unknown as Record<string,any>[]);if(page.data.length<500)break;}return result;}
 export default {async fetch(request:Request){
  const secret=Deno.env.get("SHEETS_WORKER_SECRET");if(request.method!=="POST"||!secret||request.headers.get("Authorization")!==`Bearer ${secret}`)return Response.json({error:"Worker authorization required"},{status:401});
@@ -25,10 +48,12 @@ export default {async fetch(request:Request){
    const raw=await allRows(admin,"attempts","id,user_id,cohort_id,content_version,reporting_status,kind,original_attempt_id,created_at","cohort_id",ids);
    const events=await allRows(admin,"response_events","attempt_id,payload,server_receipt_timestamp","attempt_id",raw.map(a=>a.id)),summaries=await allRows(admin,"attempt_summaries","attempt_id,completed_at","attempt_id",raw.map(a=>a.id));
    const attempts:SheetAttempt[]=raw.map(a=>({attemptId:a.id,userId:a.user_id,learnerId:members.find(m=>m.user_id===a.user_id&&m.cohort_id===a.cohort_id)?.learner_id??"",cohortId:a.cohort_id,contentVersion:a.content_version,reportingStatus:a.reporting_status,kind:a.kind,originalAttemptId:a.original_attempt_id,createdAt:a.created_at,completedAt:summaries.find(s=>s.attempt_id===a.id)?.completed_at??null,events:events.filter(e=>e.attempt_id===a.id).map(e=>({...e.payload,serverReceiptTimestamp:e.server_receipt_timestamp})).sort((a,b)=>a.clientSequence-b.clientSequence)}));
+   for(const attempt of attempts)attempt.events=attempt.events.filter(event=>(event as {type?:string}).type!=="rejected");
    const reviews=await allRows(admin,"teaching_observations","payload","cohort_id",ids),rows=buildSheetRows(learners,attempts,reviews.map(r=>r.payload),Deno.env.get("GAME_APP_URL")??"https://pelvic-fx-game-aoe5.vercel.app");
    for(const [tab,data] of Object.entries(rows))await workbook.upsert(tab,data);
    await workbook.upsert("Demo Examples",demoExamples());await workbook.overview();
-   const deliveredAt=new Date().toISOString();await workbook.upsert("Sync Status & Guide",[["Record ID","Item","Value"],["ptd:status:success","Last successful delivery UTC",deliveredAt],["ptd:status:version","Delivered queue revision",job.revision],["ptd:guide:dates","Dates","Asia/Bangkok; YYYY-MM-DD"],["ptd:guide:ids","Student IDs","Text including leading zeros"],["ptd:guide:observations","Teacher observations","Recorded in protected teacher area; mirrored here"],["ptd:guide:correction","Corrections","Corrected means correction explanation explicitly reviewed"],["ptd:guide:missing","Missing evidence","Not observed; distinct from an incorrect answer"],["ptd:guide:status","Live pending/errors","Open teacher area for current queue status; this sheet reflects the last successful delivery."]]);
+   let evaluationStatus="";try{const done=await syncEvaluation(workbook,attempts,learners,reviews.map(r=>r.payload as TeacherObservation));evaluationStatus=`Evaluation tabs updated (${done.tabs}); new handovers to score: ${done.newHandovers}`;}catch(error){evaluationStatus=`Evaluation tabs not updated: ${error instanceof Error?error.message:"unknown error"}`;}
+   const deliveredAt=new Date().toISOString();await workbook.upsert("Sync Status & Guide",[["Record ID","Item","Value"],["ptd:status:success","Last successful delivery UTC",deliveredAt],["ptd:status:version","Delivered queue revision",job.revision],["ptd:status:evaluation","Evaluation tabs",evaluationStatus],["ptd:guide:dates","Dates","Asia/Bangkok; YYYY-MM-DD"],["ptd:guide:ids","Student IDs","Text including leading zeros"],["ptd:guide:observations","Teacher observations","Recorded in protected teacher area; mirrored here"],["ptd:guide:correction","Corrections","Corrected means correction explanation explicitly reviewed"],["ptd:guide:missing","Missing evidence","Not observed; distinct from an incorrect answer"],["ptd:guide:status","Live pending/errors","Open teacher area for current queue status; this sheet reflects the last successful delivery."]]);
    const updated=await admin.from("sheets_export_queue").update({delivered_revision:job.revision,last_success:deliveredAt,last_error:null,failures:0,lease_until:null,lease_token:null}).eq("course_id",job.course_id).eq("lease_token",job.lease_token);if(updated.error)throw new Error("Queue acknowledgment failed");results.push({courseId:job.course_id,delivered:true});
   }catch(error){const message=error instanceof Error?error.message:"Delivery failed";await admin.from("sheets_export_queue").update({last_error:message,failures:job.failures+1,next_try:new Date(Date.now()+Math.min(3600000,60000*2**Math.min(job.failures,6))).toISOString(),lease_until:null,lease_token:null}).eq("course_id",job.course_id).eq("lease_token",job.lease_token);results.push({courseId:job.course_id,delivered:false,error:message});}
  }

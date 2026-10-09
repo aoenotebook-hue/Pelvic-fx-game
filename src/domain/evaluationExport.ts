@@ -16,6 +16,15 @@ import { evaluate } from "../games/evaluate.ts";
 import type { MiniGameSpec } from "../games/spec.ts";
 
 export const EVALUATION_TABS = {
+  dashboard: { name: "Dashboard", headers: ["Measure", "Value", "Notes"] },
+  objectives: {
+    name: "Objective Summary",
+    headers: ["Objective", "Practice stations", "Practice first-try %", "Pre-test items", "Pre-test correct %", "Post-test items", "Post-test correct %", "Change (percentage points)", "Corrected after feedback %", "Learners (n)"],
+  },
+  items: {
+    name: "Item Analysis",
+    headers: ["Station", "Phase", "Objectives", "Bloom level", "Must-pass", "Learners answering (n)", "Difficulty p (first try)", "Upper group p", "Lower group p", "Discrimination D", "Mean time (s)", "Hints opened", "Flag"],
+  },
   attempts: {
     name: "Attempts",
     headers: ["Record ID", "Student ID", "Cohort", "Attempt ID", "Content version", "Attempt type", "Started (Bangkok)", "Last activity (Bangkok)", "Completed (Bangkok)", "Pre-test score", "Post-test score", "Must-pass safety met", "Pass standard met", "Raw gain", "Normalized gain (g)", "Practice first-try score", "Practice corrected", "Stations answered", "Time on task (min)", "Hints opened", "LO1 first-try %", "LO2 first-try %", "LO3 first-try %", "LO4 first-try %", "LO5 first-try %", "LO6 first-try %", "LO7 first-try %", "Reward", "Exclude from analysis", "Exclude reason"],
@@ -121,7 +130,7 @@ export function buildEvaluationWorkbook(input: WorkbookInput): Workbook {
   }
 
   const practiceIds = content.nodes.filter((node) => node.stage === "practice").map((node) => node.id);
-  const workbook: Workbook = { attempts: [], responses: [], cohorts: [], misconceptions: [], handovers: [], reviews: [], feedback: [], roster: [], log: [] };
+  const workbook: Workbook = { dashboard: [], objectives: [], items: [], attempts: [], responses: [], cohorts: [], misconceptions: [], handovers: [], reviews: [], feedback: [], roster: [], log: [] };
 
   for (const { attempt, events, progress, tests, exclude, core } of facts) {
     const responses = [...core.values()];
@@ -221,6 +230,58 @@ export function buildEvaluationWorkbook(input: WorkbookInput): Workbook {
     workbook.roster.push([member.learnerId, member.cohortId, mine.some((fact) => fact.core.size > 0) ? "yes" : "no", mine.some((fact) => fact.attempt.completedAt) ? "yes" : "no", Boolean(reason), reason]);
   }
 
+  // Item analysis (classical test theory): p = proportion first-try correct; D = p(upper 27%) − p(lower 27%) on the post-test.
+  const pct = (part: number, whole: number) => (whole ? round((100 * part) / whole, 0) : "");
+  for (const node of content.nodes.filter((item) => item.game)) {
+    const answering = included.filter((fact) => fact.core.has(node.id));
+    if (!answering.length) continue;
+    const right = (list: typeof answering) => list.filter((fact) => evaluate(node.game!, fact.core.get(node.id)!.gameAnswer).correct).length;
+    const upper = answering.filter((fact) => group.get(fact.attempt.attemptId) === "upper"), lower = answering.filter((fact) => group.get(fact.attempt.attemptId) === "lower");
+    const p = right(answering) / answering.length;
+    const D = upper.length && lower.length ? right(upper) / upper.length - right(lower) / lower.length : NaN;
+    const times = answering.map((fact) => fact.core.get(node.id)!.elapsedMs).filter((ms): ms is number => typeof ms === "number");
+    const flag = answering.length < 5 ? "too few learners" : p < 0.3 ? "very hard" : p > 0.9 ? "very easy" : Number.isFinite(D) && D < 0.2 ? "low discrimination" : "";
+    workbook.items.push([node.id, phaseName[node.stage ?? "practice"], (node.objectiveIds ?? []).join(";"), node.bloom ?? "", Boolean(node.mustPass), answering.length, round(p),
+      upper.length ? round(right(upper) / upper.length) : "", lower.length ? round(right(lower) / lower.length) : "", Number.isFinite(D) ? round(D) : "",
+      times.length ? Math.round(mean(times) / 1000) : "", answering.reduce((sum, fact) => sum + (fact.core.get(node.id)!.hintsUsed ?? 0), 0), flag]);
+  }
+  // Objective summary: first-try mastery in practice, and pre → post on the test items of the same objective.
+  for (const lo of ["LO1", "LO2", "LO3", "LO4", "LO5", "LO6", "LO7"]) {
+    const ofStage = (stage: string) => content.nodes.filter((node) => node.stage === stage && node.objectiveIds?.includes(lo as never)).map((node) => node.id);
+    const share = (ids: string[], test: (fact: (typeof facts)[number], id: string) => boolean) => {
+      let hits = 0, seen = 0;
+      for (const fact of included) for (const id of ids) if (fact.core.has(id)) { seen++; if (test(fact, id)) hits++; }
+      return { hits, seen };
+    };
+    const firstTry = (fact: (typeof facts)[number], id: string) => fact.progress.firstCorrectNodeIds.includes(id);
+    const practice = share(ofStage("practice"), firstTry), pre = share(ofStage("pretest"), firstTry), post = share(ofStage("gauntlet"), firstTry);
+    const corrected = share(ofStage("practice"), (fact, id) => fact.progress.correctedNodeIds.includes(id));
+    const prePct = pct(pre.hits, pre.seen), postPct = pct(post.hits, post.seen);
+    workbook.objectives.push([lo, ofStage("practice").length, pct(practice.hits, practice.seen), ofStage("pretest").length, prePct, ofStage("gauntlet").length, postPct,
+      typeof prePct === "number" && typeof postPct === "number" ? postPct - prePct : "", pct(corrected.hits, Math.max(0, corrected.seen - practice.hits)), included.filter((fact) => fact.core.size).length]);
+  }
+  // Dashboard: one-glance class summary (included learners only).
+  const postDone = included.filter((fact) => fact.tests.post.complete), bothTests = included.filter((fact) => fact.tests.pre.complete && fact.tests.post.complete);
+  const testSize = content.nodes.filter((node) => node.stage === "gauntlet").length;
+  const g = bothTests.map((fact) => fact.tests.normalizedGain).filter((value): value is number => value !== null);
+  const fb = workbook.feedback.filter((row) => row.at(-1) === false);
+  const fbMean = (index: number) => (fb.length ? round(mean(fb.map((row) => Number(row[index])))) : "");
+  workbook.dashboard.push(
+    ["Enrolled learners", roster.length, "From the course roster"],
+    ["Started", included.filter((fact) => fact.core.size).length, "Included learners with at least one answer"],
+    ["Completed", included.filter((fact) => fact.attempt.completedAt).length, "Server-confirmed completion"],
+    ["Excluded from statistics", facts.length - included.length, "QA/demo, practice re-runs and Manual Exclusions"],
+    ["Finished the post-test", postDone.length, ""],
+    ["Met the pass standard", postDone.filter((fact) => fact.tests.passed).length, `Post-test ≥ ${passMarkFor(testSize)}/${testSize} first try and every must-pass safety item`],
+    ["Pass rate %", pct(postDone.filter((fact) => fact.tests.passed).length, postDone.length), "Of learners who finished the post-test"],
+    ["Mean pre-test score", bothTests.length ? round(mean(bothTests.map((fact) => fact.tests.pre.firstCorrect))) : "", `Out of ${testSize}; learners with both tests`],
+    ["Mean post-test score", bothTests.length ? round(mean(bothTests.map((fact) => fact.tests.post.firstCorrect))) : "", `Out of ${testSize}; learners with both tests`],
+    ["Mean normalized gain (g)", g.length ? round(mean(g)) : "", "Hake: <0.3 low, 0.3–0.7 medium, >0.7 high"],
+    ["Course feedback: useful (1–5)", fbMean(5), `${fb.length} responses (Kirkpatrick level 1)`],
+    ["Course feedback: enjoyable (1–5)", fbMean(6), ""],
+    ["Course feedback: confidence (1–5)", fbMean(7), ""],
+    ["Paired t-test, effect size", "see Pre-Post by Cohort", "Formative evidence: shows knowing and 'knows how' (Miller), not ward performance"],
+  );
   workbook.log.push(["Generated (Bangkok)", bangkok(input.generatedAt ?? new Date().toISOString())], ["Content version", content.id], ["Attempts exported", attempts.length], ["Included in statistics", included.length], ["Pass standard", `Post-test ≥ ${passMarkFor(content.nodes.filter((node) => node.stage === "gauntlet").length)}/${content.nodes.filter((node) => node.stage === "gauntlet").length} first try AND every must-pass item (${content.nodes.filter((node) => node.stage === "gauntlet" && node.mustPass).map((node) => node.id).join(", ")}) correct`], ["Normalized gain", "(post − pre) / (8 − pre); learners with pre = 8 have no g"], ["Discrimination D", "First-try rate of upper 27% minus lower 27% by post-test score (needs ≥ 4 learners)"]);
   return workbook;
 }
