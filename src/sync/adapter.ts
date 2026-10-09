@@ -56,7 +56,8 @@ export interface BackendAdapter {
   loadFacultyReport?(): Promise<FacultyReportRow[]>;
   loadLeaderboard?(contentVersion: string): Promise<LeaderboardRow[]>;
   signIn?(email: string): Promise<void>;
-  enterLearner?(email:string,studentId:string):Promise<void>;
+  /** Student ID + 4-digit code. "create" claims a new ID (first visit, or after a teacher cleared the code). */
+  enterLearner?(studentId:string,code:string,create?:boolean):Promise<EntryResult>;
   learnerContext?():Promise<LearnerProfile|null>;
   learnerAttempts?():Promise<SavedLearnerAttempt[]>;
   startAttempt?(session:AttemptSession):Promise<void>;
@@ -99,6 +100,8 @@ function sharedClient(url: string, publishableKey: string) {
   }
   return client;
 }
+
+export type EntryResult={status:"signed_in"|"needs_setup"|"already_registered"|"conflict"|"too_many"|"error"}|{status:"wrong_code";remaining:number}|{status:"locked";lockedUntil:string};
 
 export class SupabaseBackendAdapter implements BackendAdapter {
   mode = "connected" as const;
@@ -152,11 +155,24 @@ export class SupabaseBackendAdapter implements BackendAdapter {
     const { error } = await client.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin, shouldCreateUser: false } });
     if (error) throw error;
   }
-  async enterLearner(email:string,studentId:string) {
+  async enterLearner(studentId:string,code:string,create=false):Promise<EntryResult> {
     const client=await this.clientPromise;
-    const {data,error}=await client.functions.invoke("learner-entry",{body:{email,studentId,courseId:appConfig.courseId}});
-    if(error||!data?.session)throw new Error("Could not enter. Check your details or ask your teacher for help.");
+    const {data,error}=await client.functions.invoke("learner-entry",{body:{studentId,code,create,courseId:appConfig.courseId}});
+    if(error){
+      // Read the server's reason (status + small JSON body) without exposing anything else.
+      const response=(error as {context?:Response}).context;
+      const status=response?.status??0;let detail:Record<string,unknown>={};
+      try{detail=await response!.clone().json();}catch{/* not JSON */}
+      if(status===404&&detail.needsSetup)return {status:"needs_setup"};
+      if(status===401)return {status:"wrong_code",remaining:Number(detail.remaining??0)};
+      if(status===423)return {status:"locked",lockedUntil:String(detail.lockedUntil??"")};
+      if(status===409)return {status:detail.alreadyRegistered?"already_registered":"conflict"};
+      if(status===429)return {status:"too_many"};
+      return {status:"error"};
+    }
+    if(!data?.session)return {status:"error"};
     const result=await client.auth.setSession(data.session);if(result.error)throw result.error;
+    return {status:"signed_in"};
   }
   async learnerContext() {const {data,error}=await this.invokeUser("learner-context",{courseId:appConfig.courseId});if(error)throw error;return data.profile as LearnerProfile|null;}
   async learnerAttempts() {const {data,error}=await this.invokeUser("learner-attempts",{courseId:appConfig.courseId});if(error)throw error;return data.attempts as SavedLearnerAttempt[];}

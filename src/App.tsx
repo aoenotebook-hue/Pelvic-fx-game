@@ -502,19 +502,55 @@ function Orientation({ go }: { go(view: View): void }) {
 }
 
 function AccessView() {
-  const {language}=useLanguage();const th=language==="th";
-  const [email, setEmail] = useState("");
-  const [studentId,setStudentId]=useState("");
+  const {language}=useLanguage();const th=language==="th";const tr=(en:string,thai:string)=>th?thai:en;
   const [teacher,setTeacher]=useState(window.location.hash.startsWith("#teacher"));
+  const [email, setEmail] = useState("");
+  const [studentId,setStudentId]=useState(""),[code,setCode]=useState(""),[confirm,setConfirm]=useState("");
+  // "setup": first visit (or code cleared by the teacher) — choose the code and type it twice.
+  const [setup,setSetup]=useState(false);
   const [busy,setBusy]=useState(false);const entering=useRef(false);
   const [status, setStatus] = useState("");
-  const requestLink = async () => {
+  const codeValid=/^\d{4}$/.test(code), idValid=/^[A-Za-z0-9_-]{1,40}$/.test(studentId.trim());
+  const teacherLink = async () => {
     if (entering.current||!email.trim()) return;entering.current=true;setBusy(true);setStatus("");
-    try { if(teacher){await backend.signIn?.(email.trim());setStatus(th?"ตรวจสอบลิงก์เข้าสู่ระบบในอีเมล":"Check your email for your teacher sign-in link.");}else{await backend.enterLearner?.(email.trim(),studentId.trim());setStatus(th?"เข้าสู่ระบบแล้ว":"Signed in.");} }
-    catch { setStatus(th?"เข้าสู่ระบบไม่สำเร็จ ตรวจสอบข้อมูลหรือติดต่ออาจารย์":"Could not enter. Check your details or ask your teacher for help."); }
+    // Same message whether or not the address is enrolled, so the screen cannot be used to discover accounts.
+    try { await backend.signIn?.(email.trim()); } catch { /* same message */ }
+    setStatus(tr("If this email belongs to a teacher, a sign-in link has been sent. Check your inbox.","หากอีเมลนี้เป็นของอาจารย์ ระบบได้ส่งลิงก์เข้าสู่ระบบแล้ว ตรวจสอบกล่องอีเมล"));
+    entering.current=false;setBusy(false);
+  };
+  const enter = async () => {
+    if (entering.current||!idValid||!codeValid) return;
+    if (setup&&code!==confirm) { setStatus(tr("The two codes do not match.","รหัสสองช่องไม่ตรงกัน")); return; }
+    entering.current=true;setBusy(true);setStatus("");
+    try {
+      const result=await backend.enterLearner!(studentId.trim(),code,setup);
+      if(result.status==="signed_in")setStatus(tr("Signed in.","เข้าสู่ระบบแล้ว"));
+      else if(result.status==="needs_setup"){setSetup(true);setConfirm("");setStatus(tr("First time with this student ID: type your new 4-digit code again to confirm it. Remember it — you need it to come back.","ใช้รหัสนักศึกษานี้ครั้งแรก: พิมพ์รหัส 4 หลักอีกครั้งเพื่อยืนยัน จำรหัสนี้ไว้ ต้องใช้เมื่อกลับมาเล่นต่อ"));}
+      else if(result.status==="wrong_code")setStatus(tr(`Wrong code. ${result.remaining} tries left before a 15-minute lock.`,`รหัสไม่ถูกต้อง เหลืออีก ${result.remaining} ครั้งก่อนถูกล็อก 15 นาที`));
+      else if(result.status==="locked")setStatus(tr("Too many wrong codes. Try again in 15 minutes, or ask your teacher to reset your code.","ใส่รหัสผิดหลายครั้ง ลองใหม่ใน 15 นาที หรือขอให้อาจารย์รีเซ็ตรหัส"));
+      else if(result.status==="already_registered"){setSetup(false);setStatus(tr("This student ID already has a code. Enter your code, or ask your teacher to reset it.","รหัสนักศึกษานี้ตั้งรหัสไว้แล้ว ใส่รหัสเดิม หรือขอให้อาจารย์รีเซ็ต"));}
+      else if(result.status==="too_many")setStatus(tr("Too many attempts. Wait a minute and try again.","ลองหลายครั้งเกินไป รอ 1 นาทีแล้วลองใหม่"));
+      else setStatus(tr("Could not enter. Check your student ID and code, or ask your teacher.","เข้าไม่ได้ ตรวจสอบรหัสนักศึกษาและรหัส 4 หลัก หรือติดต่ออาจารย์"));
+    } catch { setStatus(tr("Could not enter. Check your connection and try again.","เข้าไม่ได้ ตรวจสอบการเชื่อมต่อแล้วลองใหม่")); }
     finally{entering.current=false;setBusy(false);}
   };
-  return <section className="reading page-enter"><h1>{appConfig.mode==="demo"?"Local demonstration":teacher?(th?"เข้าสู่ระบบอาจารย์":"Teacher sign-in"):(th?"เข้าเกม":"Enter game")}</h1>{appConfig.mode==="demo"?<p>Fictional local demonstration. Course reporting requires the connected service.</p>:<><form onSubmit={event=>{event.preventDefault();void requestLink();}}><label><span>{th?"อีเมล":"Email address"}</span><input autoComplete="email" required type="email" value={email} onChange={event=>setEmail(event.target.value)} /></label>{!teacher&&<label><span>{th?"รหัสนักศึกษา":"Student ID"}</span><input autoComplete="username" required type="text" maxLength={40} value={studentId} onChange={event=>setStudentId(event.target.value)} /></label>}<button className="primary" disabled={busy||!email.trim()||(!teacher&&!studentId.trim())}>{busy?(th?"กำลังเข้าสู่ระบบ…":"Entering…"):teacher?(th?"ส่งลิงก์เข้าสู่ระบบ":"Send teacher sign-in link"):(th?"เข้าเกม":"Enter game")}</button></form><p role="status">{status}</p>{!teacher&&<small>{th?"ใช้ข้อมูลเดิมเพื่อกลับมาเล่นต่อ ผู้ที่รู้อีเมลและรหัสนักศึกษาทั้งสองอย่างสามารถเปิดบันทึกนี้ได้":"Use the same details to resume. Anyone knowing both can access this learner record."}</small>}<p><button className="text-button" onClick={()=>{setTeacher(!teacher);setStatus("");}}>{teacher?(th?"กลับไปเข้าสู่เกมนักศึกษา":"Student entry"):(th?"สำหรับอาจารย์":"Teacher access")}</button></p></>}</section>;
+  const pinInput=(value:string,set:(v:string)=>void,label:string,id:string)=><label htmlFor={id}><span>{label}</span><input id={id} className="pin-input" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete={setup?"new-password":"current-password"} type="password" required value={value} onChange={event=>set(event.target.value.replace(/\D/g,"").slice(0,4))} /></label>;
+  if(appConfig.mode==="demo")return <section className="reading page-enter"><h1>{tr("Local demonstration","โหมดทดลองในเครื่อง")}</h1><p>{tr("Fictional local demonstration. Course reporting requires the connected service.","โหมดทดลองด้วยข้อมูลสมมติ การส่งผลรายวิชาต้องใช้ระบบที่เชื่อมต่อ")}</p></section>;
+  return <section className="reading page-enter">
+    <h1>{teacher?tr("Teacher sign-in","เข้าสู่ระบบอาจารย์"):tr("Enter game","เข้าเกม")}</h1>
+    {teacher?<form onSubmit={event=>{event.preventDefault();void teacherLink();}}>
+      <label><span>{tr("Email address","อีเมล")}</span><input autoComplete="email" required type="email" value={email} onChange={event=>setEmail(event.target.value)} /></label>
+      <button className="primary" disabled={busy||!email.trim()}>{busy?tr("Sending…","กำลังส่ง…"):tr("Send teacher sign-in link","ส่งลิงก์เข้าสู่ระบบ")}</button>
+    </form>:<form onSubmit={event=>{event.preventDefault();void enter();}}>
+      <label htmlFor="student-id"><span>{tr("Student ID","รหัสนักศึกษา")}</span><input id="student-id" autoComplete="username" autoCapitalize="characters" required type="text" maxLength={40} value={studentId} onChange={event=>{setStudentId(event.target.value);setSetup(false);}} /></label>
+      {pinInput(code,setCode,setup?tr("Choose a 4-digit code","ตั้งรหัส 4 หลัก"):tr("Your 4-digit code","รหัส 4 หลักของคุณ"),"student-code")}
+      {setup&&pinInput(confirm,setConfirm,tr("Type the code again","พิมพ์รหัสอีกครั้ง"),"student-code-confirm")}
+      <button className="primary" disabled={busy||!idValid||!codeValid||(setup&&confirm.length!==4)}>{busy?tr("Entering…","กำลังเข้าสู่ระบบ…"):setup?tr("Save code and enter","บันทึกรหัสและเข้าเกม"):tr("Enter game","เข้าเกม")}</button>
+      <small>{tr("First time? Type your student ID and choose any 4 digits; you will be asked to confirm them. Use the same ID and code to continue on any device. Do not share your code. Forgot it? Ask your teacher to reset it.","ครั้งแรก? ใส่รหัสนักศึกษาและตั้งรหัส 4 หลักได้เอง ระบบจะให้ยืนยันอีกครั้ง ใช้รหัสเดิมเพื่อเล่นต่อได้ทุกเครื่อง อย่าบอกรหัสกับผู้อื่น ลืมรหัส? ขอให้อาจารย์รีเซ็ต")}</small>
+    </form>}
+    <p role="status" aria-live="polite">{status}</p>
+    <p><button className="text-button" onClick={()=>{setTeacher(!teacher);setStatus("");}}>{teacher?tr("Student entry","เข้าเกมสำหรับนักศึกษา"):tr("Teacher access","สำหรับอาจารย์")}</button></p>
+  </section>;
 }
 
 function MissionMap({ events, progress, choose }: { events: LearningEvent[]; progress: ReturnType<typeof deriveProgress>; choose(nodeId: string): void }) {

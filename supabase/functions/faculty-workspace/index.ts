@@ -16,6 +16,18 @@ export default {fetch: withCors(withSupabase({auth:"user"},async(request,ctx)=>{
  // Teachers see identifiable learner evidence: the session must have passed two-step verification (TOTP).
  if(!hasTwoStepVerification(request))return body.operation==="context"?Response.json({authorized:false,mfaRequired:true}):fail("Two-step verification required",403);
  if(body.operation==="context")return Response.json({authorized:true});
+ if(body.operation==="reset_code"){
+  // Clears a forgotten (or wrongly claimed) code; the student chooses a new one at next entry. Logged in audit_events.
+  const studentId=typeof body.payload?.studentId==="string"?body.payload.studentId.trim().toUpperCase():"";
+  if(!/^[A-Z0-9_-]{1,40}$/.test(studentId))return fail("Invalid student ID");
+  const {data:profile,error}=await ctx.supabaseAdmin.from("learner_profiles").select("user_id,cohort_id").eq("course_id",body.courseId).eq("student_id",studentId).in("cohort_id",ids).maybeSingle();
+  if(error)return fail("Lookup failed",500);
+  if(!profile)return fail("No student with this ID in your cohorts",404);
+  const cleared=await ctx.supabaseAdmin.from("learner_profiles").update({pin_hash:null,pin_failures:0,pin_locked_until:null,pin_set_at:null}).eq("user_id",profile.user_id);
+  if(cleared.error)return fail("Reset failed",500);
+  await ctx.supabaseAdmin.from("audit_events").insert({actor_id:userId,action:"reset_learner_code",target_type:"learner_profile",target_id:profile.user_id,reason:`student ${studentId}`});
+  return Response.json({reset:true});
+ }
  const {data:attempts,error:attemptError}=await ctx.supabaseAdmin.from("attempts").select("id,user_id,cohort_id,content_version,reporting_status,attempt_summaries(completed_at)").in("cohort_id",ids);
  if(attemptError)return fail("Attempts unavailable",500);
  if(body.operation==="review"){

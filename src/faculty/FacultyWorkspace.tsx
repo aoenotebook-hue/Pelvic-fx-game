@@ -88,6 +88,7 @@ export function FacultyWorkspace({ events, attemptId }: { events: LearningEvent[
       <details className="panel"><summary>{t("Clinical review notes", "หมายเหตุทบทวนเนื้อหา")}</summary>{content.nodes.filter(n => n.reviewNote).map(n => <p key={n.id}>{n.id}: {n.reviewNote}</p>)}</details>
     </>}
     {rangeValid && tab === "exports" && <article className="panel"><h2>{t("Export this date range", "ส่งออกช่วงวันที่นี้")}</h2><p>{t("CSV opens in Excel and includes your date range and content version. Automatic Google Sheets delivery is separate; check its status above.", "CSV เปิดใน Excel ได้ พร้อมช่วงวันที่และเวอร์ชันเนื้อหา การส่ง Google Sheets อัตโนมัติเป็นอีกระบบ ตรวจสถานะด้านบน")}</p><div className="button-row">{(["summary", "evidence", "reviews", "objectives"] as const).map(kind => <button className="secondary" key={kind} disabled={state === "loading" || state === "error"} onClick={() => download(kind)}>{({ summary: t("Export cohort CSV", "ส่งออกสรุป CSV"), evidence: t("Export evidence CSV", "ส่งออกหลักฐาน CSV"), reviews: t("Export reviews CSV", "ส่งออก review CSV"), objectives: t("Export objective CSV", "ส่งออก objective CSV") })[kind]}</button>)}<button className="secondary" disabled={state === "loading" || state === "error"} onClick={() => {setTab("overview");requestAnimationFrame(() => { document.body.classList.add("print-class-briefing"); window.print(); document.body.classList.remove("print-class-briefing"); }); }}>{t("Print anonymous briefing", "พิมพ์ประเด็นอภิปรายไม่ระบุตัวตน")}</button></div></article>}
+    {appConfig.mode === "connected" && tab === "individual" && <ResetStudentCode />}
     {rangeValid && tab === "exports" && <EvaluationExport attempts={attempts} roster={roster} reviews={reviews} />}
     {rangeValid && tab === "individual" && <>
       <article className="panel staff-private"><h2>{t("Individual evidence", "หลักฐานรายบุคคล")}</h2><label>{t("Learner attempt", "Attempt นักศึกษา")}<select value={active?.attemptId ?? ""} onChange={e => setSelected(e.target.value)}><option value="">{t("Choose an attempt", "เลือก attempt")}</option>{report.visibleAttempts.map(a => <option key={a.attemptId} value={a.attemptId}>{a.learnerId} · {a.reportingStatus} · {a.contentVersion}</option>)}</select></label>{!active && <p>{t("No attempt matches. Try all dates or another version.", "ไม่มี attempt ตรงตัวกรอง ลองทุกวันที่หรือเวอร์ชันอื่น")}</p>}
@@ -120,3 +121,23 @@ function EvaluationExport({ attempts, roster, reviews }: { attempts: EvidenceAtt
     <div className="button-row"><button className="secondary" disabled={busy} onClick={() => void download()}>{t("Download CSV", "ดาวน์โหลด CSV")}</button></div>
     <p role="status">{status}</p></article>;
 }
+
+/** Clears a student's forgotten 4-digit code; the student sets a new one at next entry. */
+function ResetStudentCode() {
+  const { language } = useLanguage(), t = (en: string, th: string) => language === "th" ? th : en;
+  const [studentId, setStudentId] = useState(""), [status, setStatus] = useState(""), [busy, setBusy] = useState(false);
+  const reset = async () => {
+    const id = studentId.trim();
+    if (!id || busy || !window.confirm(t(`Reset the code of student ${id}? They will choose a new code at their next entry.`, `รีเซ็ตรหัสของนักศึกษา ${id}? นักศึกษาจะตั้งรหัสใหม่เมื่อเข้าเกมครั้งถัดไป`))) return;
+    setBusy(true);
+    try { await adapter.facultyWorkspace!("reset_code", { studentId: id }); setStatus(t(`Code cleared for ${id}. Ask the student to enter their ID and choose a new code now.`, `ล้างรหัสของ ${id} แล้ว ให้นักศึกษาใส่รหัสนักศึกษาและตั้งรหัสใหม่ทันที`)); setStudentId(""); }
+    catch { setStatus(t("Reset failed. Check the student ID (it must be in your cohort).", "รีเซ็ตไม่สำเร็จ ตรวจสอบรหัสนักศึกษา (ต้องอยู่ในกลุ่มของคุณ)")); }
+    finally { setBusy(false); }
+  };
+  return <article className="panel staff-private"><h2>{t("Reset a student's code", "รีเซ็ตรหัส 4 หลักของนักศึกษา")}</h2>
+    <p>{t("For a forgotten code, or if someone else claimed a student's ID. Do it while the student is with you, so they set the new code straight away.", "ใช้เมื่อนักศึกษาลืมรหัส หรือมีผู้อื่นใช้รหัสนักศึกษานั้นไปก่อน ควรทำขณะนักศึกษาอยู่ด้วย เพื่อให้ตั้งรหัสใหม่ทันที")}</p>
+    <label>{t("Student ID", "รหัสนักศึกษา")}<input value={studentId} onChange={event => setStudentId(event.target.value)} maxLength={40} /></label>
+    <div className="button-row"><button className="secondary" disabled={busy || !studentId.trim()} onClick={() => void reset()}>{t("Reset code", "รีเซ็ตรหัส")}</button></div>
+    <p role="status">{status}</p></article>;
+}
+

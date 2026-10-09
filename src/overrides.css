@@ -748,3 +748,4 @@ h1[tabindex="-1"]:focus, h2[tabindex="-1"]:focus { outline: 3px solid #5b7fd6; o
 .likert { display: flex; flex-wrap: wrap; gap: 6px 10px; border: 0; padding: 4px 0; }
 .likert legend { width: 100%; font-weight: 650; margin-bottom: 4px; }
 .likert label { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; min-width: 44px; justify-content: center; }
+.pin-input { font-size: 1.4rem; letter-spacing: 0.5em; text-align: center; max-width: 9rem; min-height: 48px; }

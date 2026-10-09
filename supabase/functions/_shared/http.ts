@@ -2,7 +2,8 @@
 // teacher two-step-verification (MFA) check. Kept free of Supabase imports so it is easy to test.
 
 /** Comma-separated list, e.g. "https://pelvic-fx-game.vercel.app". Set with `supabase secrets set ALLOWED_ORIGINS=...`. */
-const DEFAULT_ORIGINS = ["https://pelvic-fx-game.vercel.app"];
+// Both production domains of the Vercel project.
+const DEFAULT_ORIGINS = ["https://pelvic-fx-game.vercel.app", "https://pelvic-fx-game-aoe5.vercel.app"];
 function allowedOrigins(): string[] {
   // deno-lint-ignore no-explicit-any
   const raw = (globalThis as any).Deno?.env?.get?.("ALLOWED_ORIGINS") as string | undefined;
