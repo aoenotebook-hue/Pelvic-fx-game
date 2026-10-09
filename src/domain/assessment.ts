@@ -1,6 +1,6 @@
-import type { ContentVersion, LearningEvent } from "./types";
-import { evaluate,starsFor } from "../games/evaluate";
-import { deriveProgress } from "./engine";
+import type { ContentVersion, LearningEvent } from "./types.ts";
+import { evaluate,starsFor } from "../games/evaluate.ts";
+import { deriveProgress } from "./engine.ts";
 export const rubricDimensions = ["clinical_interpretation","priorities_supervised_action","uncertainty_request"] as const;
 export const rubricStates = ["not_observed","needs_discussion","with_prompting","without_prompting"] as const;
 export type TeacherObservation = { id:string; attemptId:string; contentVersion:string; reviewerId:string; reviewedAt:string; scope:"case"|"concept"; scopeId:string; rubric:Record<typeof rubricDimensions[number],typeof rubricStates[number]>; observation:string; feedback:string; nextStep:string };

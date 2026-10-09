@@ -1,6 +1,10 @@
 import type { LearningEvent } from "../domain/types";
 import { appConfig } from "../config";
 import { submissionBatches } from "./batches";
+import { attemptMetadata } from "../storage/session";
+import type { AttemptSession } from "../storage/session";
+export interface LearnerProfile { studentId:string; email:string; identityStatus:string; }
+export interface SavedLearnerAttempt extends AttemptSession { events:LearningEvent[]; }
 import type { EvidenceAttempt, RosterMember, TeacherObservation } from "../domain/assessment";
 export interface FacultyWorkspaceData { roster:RosterMember[]; attempts:EvidenceAttempt[]; reviews:TeacherObservation[]; review:TeacherObservation; authorized?:boolean; }
 
@@ -52,6 +56,11 @@ export interface BackendAdapter {
   loadFacultyReport?(): Promise<FacultyReportRow[]>;
   loadLeaderboard?(contentVersion: string): Promise<LeaderboardRow[]>;
   signIn?(email: string): Promise<void>;
+  enterLearner?(email:string,studentId:string):Promise<void>;
+  learnerContext?():Promise<LearnerProfile|null>;
+  learnerAttempts?():Promise<SavedLearnerAttempt[]>;
+  startAttempt?(session:AttemptSession):Promise<void>;
+  sheetsStatus?(requestSync?:boolean):Promise<{configured:boolean;pending:number;lastSuccess:string|null;error:string|null}>;
   signOut?(): Promise<void>;
   facultyWorkspace?(operation:string, payload?:unknown):Promise<FacultyWorkspaceData>;
   recoverCompletion?(attemptId:string):Promise<SyncResult["completionReceipt"]>;
@@ -67,25 +76,61 @@ export class DemoBackendAdapter implements BackendAdapter {
   async currentUserId() { return appConfig.demoUserId; }
 }
 
+// Share Auth initialization (including magic-link consumption) across app modules.
+// Separate clients can race over the same persisted session during URL recovery.
+const sharedClients = new Map<string, Map<string, Promise<import("@supabase/supabase-js").SupabaseClient>>>();
+function sharedClient(url: string, publishableKey: string) {
+  let keys = sharedClients.get(url);
+  if (!keys) { keys = new Map(); sharedClients.set(url, keys); }
+  let client = keys.get(publishableKey);
+  if (!client) {
+    client = import("@supabase/supabase-js").then(({ createClient }) => createClient(url, publishableKey));
+    keys.set(publishableKey, client);
+  }
+  return client;
+}
+
 export class SupabaseBackendAdapter implements BackendAdapter {
   mode = "connected" as const;
   private clientPromise: Promise<import("@supabase/supabase-js").SupabaseClient>;
   constructor(url: string, publishableKey: string) {
-    this.clientPromise = import("@supabase/supabase-js").then(({ createClient }) => createClient(url, publishableKey));
+    this.clientPromise = sharedClient(url, publishableKey);
+  }
+  private async invokeUser(name: string, body: Record<string, unknown>) {
+    const client = await this.clientPromise;
+    const { data, error } = await client.auth.getSession();
+    if (error || !data.session?.access_token) throw new Error("Sign in again before submitting. Your work remains saved on this device.");
+    // Never substitute the public project key for an authenticated user's JWT.
+    const result=await client.functions.invoke(name, { body, headers: { Authorization: `Bearer ${data.session.access_token}` } });
+    const current=await client.auth.getSession();
+    if(current.error||current.data.session?.user.id!==data.session.user.id)throw new Error("Account changed. Sign in again; your work remains saved.");
+    return result;
   }
   async currentUserId() { const client = await this.clientPromise; return (await client.auth.getSession()).data.session?.user.id ?? null; }
   onAuthChange(callback:(userId:string|null)=>void) { let active=true; let unsubscribe:undefined|(()=>void); void this.clientPromise.then(client=>{if(!active)return; const subscription=client.auth.onAuthStateChange((_event,session)=>callback(session?.user.id??null));unsubscribe=()=>subscription.data.subscription.unsubscribe();});return()=>{active=false;unsubscribe?.();}; }
-  async facultyWorkspace(operation:string,payload?:unknown):Promise<FacultyWorkspaceData> { const client=await this.clientPromise; const {data,error}=await client.functions.invoke("faculty-workspace",{body:{courseId:appConfig.courseId,operation,payload}});if(error)throw error;return data; }
-  async recoverCompletion(attemptId:string) { const client=await this.clientPromise; const {data,error}=await client.functions.invoke("completion-status",{body:{courseId:appConfig.courseId,attemptId}});if(error)throw error;return data.completionReceipt as SyncResult["completionReceipt"]; }
+  async facultyWorkspace(operation:string,payload?:unknown):Promise<FacultyWorkspaceData> { const {data,error}=await this.invokeUser("faculty-workspace",{courseId:appConfig.courseId,operation,payload});if(error)throw error;return data; }
+  async recoverCompletion(attemptId:string) { const {data,error}=await this.invokeUser("completion-status",{courseId:appConfig.courseId,attemptId});if(error)throw error;return data.completionReceipt as SyncResult["completionReceipt"]; }
   async signIn(email: string) {
     const client = await this.clientPromise;
     const { error } = await client.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin, shouldCreateUser: false } });
     if (error) throw error;
   }
-  async signOut() { const client = await this.clientPromise; const { error } = await client.auth.signOut(); if (error) throw error; }
+  async enterLearner(email:string,studentId:string) {
+    const client=await this.clientPromise;
+    const {data,error}=await client.functions.invoke("learner-entry",{body:{email,studentId,courseId:appConfig.courseId}});
+    if(error||!data?.session)throw new Error("Could not enter. Check your details or ask your teacher for help.");
+    const result=await client.auth.setSession(data.session);if(result.error)throw result.error;
+  }
+  async learnerContext() {const {data,error}=await this.invokeUser("learner-context",{courseId:appConfig.courseId});if(error)throw error;return data.profile as LearnerProfile|null;}
+  async learnerAttempts() {const {data,error}=await this.invokeUser("learner-attempts",{courseId:appConfig.courseId});if(error)throw error;return data.attempts as SavedLearnerAttempt[];}
+  async startAttempt(session:AttemptSession){
+    if(session.originalAttemptId){const parent=await this.invokeUser("start-attempt",{attemptId:session.originalAttemptId,courseId:appConfig.courseId,contentVersion:session.contentVersion,kind:"initial"});if(parent.error)throw parent.error;}
+    const {error}=await this.invokeUser("start-attempt",{attemptId:session.attemptId,courseId:appConfig.courseId,contentVersion:session.contentVersion,kind:session.kind??"initial",originalAttemptId:session.originalAttemptId});if(error)throw error;
+  }
+  async sheetsStatus(requestSync=false) {const {data,error}=await this.invokeUser("sheets-status",{courseId:appConfig.courseId,requestSync});if(error)throw error;return data;}
+  async signOut() { const client = await this.clientPromise; const { error } = await client.auth.signOut({ scope: "local" }); if (error) throw error; }
   async loadLeaderboard(contentVersion: string): Promise<LeaderboardRow[]> {
-    const client = await this.clientPromise;
-    const { data, error } = await client.functions.invoke("cohort-leaderboard", { body: { courseId: appConfig.courseId, contentVersion } });
+    const { data, error } = await this.invokeUser("cohort-leaderboard", { courseId: appConfig.courseId, contentVersion });
     if (error) throw error;
     return (data?.rows ?? []) as LeaderboardRow[];
   }
@@ -133,15 +178,14 @@ export class SupabaseBackendAdapter implements BackendAdapter {
     });
   }
   async syncEvents(events: LearningEvent[]): Promise<SyncResult> {
-    const client = await this.clientPromise;
     for (const first of new Map(events.map((event) => [event.attemptId,event])).values()) {
-      const { error: startError } = await client.functions.invoke("start-attempt", { body: { attemptId: first.attemptId, courseId: appConfig.courseId, contentVersion: first.contentVersion, kind: "initial" } });
-      if (startError) throw startError;
+      const metadata=attemptMetadata(first.attemptId);
+      await this.startAttempt(metadata??{attemptId:first.attemptId,contentVersion:first.contentVersion});
     }
     const result:SyncResult={acknowledgments:[],retryable:[],rejected:[]};
     const batches=submissionBatches(events,appConfig.courseId);
     for(let index=0;index<batches.length;index++){
-      const {data,error}=await client.functions.invoke("sync-events",{body:{courseId:appConfig.courseId,events:batches[index]}});
+      const {data,error}=await this.invokeUser("sync-events",{courseId:appConfig.courseId,events:batches[index]});
       if(error){result.retryable.push(...batches.slice(index).flat().map(event=>event.eventId));break;}
       const next=data as SyncResult;result.acknowledgments.push(...next.acknowledgments);result.retryable.push(...next.retryable);result.rejected.push(...next.rejected);
       if(next.completionReceipt)result.completionReceipt=next.completionReceipt;

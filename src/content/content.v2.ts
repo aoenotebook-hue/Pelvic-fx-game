@@ -1,6 +1,6 @@
-import { pelvicTraumaContent as legacy } from "./content.v1";
+import { pelvicTraumaContent as legacy } from "./content.v1.ts";
 import type { Asset, ContentVersion, Node, Option } from "../domain/types";
-import { contentVersionSchema, validateContentLinks } from "../domain/schema";
+import { contentVersionSchema, validateContentLinks } from "../domain/schema.ts";
 
 export const REVISION_ID = "ptd-caseflow-draft-2026-10-02";
 type Copy = { phase: string; stem: string; question: string; choices: [string, string, string]; reasons: [string, string, string]; facts: string[]; retry: string; retryChoices: [string, string, string]; retryReasons: [string, string, string] };

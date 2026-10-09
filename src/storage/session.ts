@@ -3,9 +3,14 @@ import { LEGACY_VERSION } from "../domain/rewards";
 import { appConfig } from "../config";
 import { loadEvents } from "./db";
 
-export interface AttemptSession { attemptId: string; contentVersion: string; }
+export interface AttemptSession { attemptId: string; contentVersion: string; kind?: "initial" | "practice"; originalAttemptId?: string; }
 const activeKey = (account: string) => `ptd-active-attempt:${account}:${appConfig.courseId}`;
-export function saveSession(account: string, session: AttemptSession) { localStorage.setItem(activeKey(account), JSON.stringify(session)); }
+export function saveSession(account: string, session: AttemptSession) { localStorage.setItem(activeKey(account), JSON.stringify(session)); localStorage.setItem(`ptd-session:${session.attemptId}`,JSON.stringify(session)); }
+export function attemptMetadata(id:string):AttemptSession|undefined { const value=localStorage.getItem(`ptd-session:${id}`);return value?JSON.parse(value):undefined; }
+export function beginPractice(account:string, original:AttemptSession):AttemptSession {
+  const session:AttemptSession={attemptId:crypto.randomUUID(),contentVersion:original.contentVersion,kind:"practice",originalAttemptId:original.originalAttemptId??original.attemptId};
+  saveSession(account,session);return session;
+}
 export async function resolveSession(account: string, userId: string): Promise<AttemptSession> {
   const saved = localStorage.getItem(activeKey(account));
   if (saved) {

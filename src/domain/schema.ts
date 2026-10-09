@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { miniGameSchema } from "../games/spec";
+import { miniGameSchema } from "../games/spec.ts";
 
 const id = z.string().min(1).max(120);
 const nullableText = z.string().max(500).nullable();

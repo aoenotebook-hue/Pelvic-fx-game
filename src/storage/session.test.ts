@@ -1,12 +1,13 @@
 import {beforeEach,describe,it,expect,vi} from "vitest";
-import {resolveSession,beginRevision,saveSession} from "./session";
+import {resolveSession,beginRevision,beginPractice,attemptMetadata,saveSession} from "./session";
 import {LEGACY_VERSION} from "../domain/rewards";
-import {MINIGAME_VERSION as REVISION_VERSION} from "../games/spec";
+import {FOCUSED_VERSION as REVISION_VERSION} from "../games/spec";
 import {loadEvents} from "./db";
 import {appConfig} from "../config";
 vi.mock("./db",()=>({loadEvents:vi.fn(async()=>[])}));
 describe("saved attempt version selection",()=>{
   beforeEach(()=>{localStorage.clear();vi.mocked(loadEvents).mockResolvedValue([]);});
+  it("practice resets create distinct attempts and preserve original metadata and version",async()=>{const original={attemptId:"original",contentVersion:REVISION_VERSION};saveSession("demo:reset",original);const first=beginPractice("demo:reset",original),second=beginPractice("demo:reset",first);expect(first.attemptId).not.toBe(second.attemptId);expect(first).toMatchObject({kind:"practice",originalAttemptId:"original",contentVersion:REVISION_VERSION});expect(second.originalAttemptId).toBe("original");expect(attemptMetadata("original")).toEqual(original);expect(await resolveSession("demo:reset","reset")).toEqual(second);});
   it("opens the revision for a new learner and preserves its identity on resume",async()=>{
     const session=await resolveSession("demo:new","new");
     expect(session.contentVersion).toBe(REVISION_VERSION);

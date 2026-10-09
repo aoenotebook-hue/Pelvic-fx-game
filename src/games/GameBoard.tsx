@@ -108,7 +108,7 @@ export function GameBoard({
           (memory && found.includes(card.id)) ||
           (spec.kind === "ring_trace" && trace.length !== spec.cards.length)
         }
-        draggable={!memory}
+        draggable={!memory && spec.kind !== "mcq"}
         onDragStart={(event) => {
           setActive(card.id);
           event.dataTransfer.setData("text/plain", card.id);
@@ -129,11 +129,11 @@ export function GameBoard({
       >
         {face ? (
           <>
-            <ClinicalArt
+            {spec.kind !== "mcq" && <ClinicalArt
               kind={card.icon}
               size={92}
               ariaLabel={card.label[language]}
-            />
+            />}
             <span>{card.label[language]}</span>
             {map[card.id] && (
               <small>
@@ -152,7 +152,7 @@ export function GameBoard({
     );
   };
   return (
-    <section className="game-board" aria-label={spec.instruction[language]}>
+    <section className={`game-board game-board-${spec.kind}`} aria-label={spec.instruction[language]}>
       <p className="game-instruction">{spec.instruction[language]}</p>
       {spec.kind === "hotspot" && spec.order && (
         <p className="hotspot-prompt">

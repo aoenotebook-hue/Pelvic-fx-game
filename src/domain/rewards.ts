@@ -1,7 +1,7 @@
-import type { ContentVersion, DerivedProgress, LearningEvent } from "./types";
-import { deriveProgress } from "./engine";
-import { rewardLedger, type RewardSummary } from "./rewardRules";
-export * from "./rewardRules";
+import type { ContentVersion, DerivedProgress, LearningEvent } from "./types.ts";
+import { deriveProgress } from "./engine.ts";
+import { rewardLedger, type RewardSummary } from "./rewardRules.ts";
+export * from "./rewardRules.ts";
 export function computeRewards(content: ContentVersion, events: LearningEvent[], existingProgress?: DerivedProgress): RewardSummary {
   const progress = existingProgress ?? deriveProgress(content,events);
   const rewardNodes=content.nodes.filter(n=>!n.stage||n.stage==="practice").map(n=>n.id);

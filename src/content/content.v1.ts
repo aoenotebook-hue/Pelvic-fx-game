@@ -1,5 +1,5 @@
 import type { Asset, ContentVersion, CorrectionItem, Mission, Node, Option, Resource, SourceDocument } from "../domain/types";
-import { contentVersionSchema, validateContentLinks } from "../domain/schema";
+import { contentVersionSchema, validateContentLinks } from "../domain/schema.ts";
 
 const VERSION = "ptd-en-draft-2026-10-01";
 const confidence = ["low", "medium", "high"] as const;

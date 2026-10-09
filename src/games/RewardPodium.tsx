@@ -6,9 +6,11 @@ const backend = createBackendAdapter();
 export function RewardPodium({
   complete,
   reward,
+  contentVersion = MINIGAME_VERSION,
 }: {
   complete: boolean;
   reward: number;
+  contentVersion?: string;
 }) {
   const { language } = useLanguage(),
     t = (en: string, th: string) => (language === "th" ? th : en);
@@ -18,7 +20,7 @@ export function RewardPodium({
     let active = true;
     if (complete && backend.mode === "connected")
       void backend
-        .loadLeaderboard?.(MINIGAME_VERSION)
+        .loadLeaderboard?.(contentVersion)
         .then((data) => {
           if (active) {
             setRows(data);
@@ -31,7 +33,7 @@ export function RewardPodium({
     return () => {
       active = false;
     };
-  }, [complete, reward]);
+  }, [complete, reward, contentVersion]);
   return (
     <article className="panel">
       <h2>{t("Cohort reward podium", "Podium reward ของ cohort")}</h2>

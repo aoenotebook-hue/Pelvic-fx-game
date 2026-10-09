@@ -5,6 +5,7 @@ export default {fetch:withSupabase({auth:"user"},async(request,ctx)=>{
  if(request.method!=="POST")return fail("Method not allowed",405);
  const raw=await request.text();if(new TextEncoder().encode(raw).length>12000)return fail("Request too large",413);
  let body;try{body=JSON.parse(raw);}catch{return fail("Invalid JSON");}
+ if(!body||typeof body!=="object"||Array.isArray(body))return fail("Invalid request");
  const userId=ctx.userClaims?.id;if(!userId||!body.courseId)return fail("Authentication and course required",401);
  const {data:roles,error:roleError}=await ctx.supabaseAdmin.from("role_assignments").select("role,cohort_id").eq("user_id",userId);
  const {data:cohorts,error:cohortError}=await ctx.supabaseAdmin.from("cohorts").select("id").eq("course_id",body.courseId);
