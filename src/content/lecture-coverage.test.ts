@@ -150,3 +150,10 @@ function wrong(spec: MiniGameSpec): unknown {
   if (spec.rounds) return spec.rounds.map((round, i) => (i === 0 ? wrong(round) : solve(round)));
   return spec.kind === "gauge" ? spec.range![1] + 1 : spec.kind === "image_pick" ? spec.cards.find((card) => card.id !== spec.targets![0])!.id : [];
 }
+
+describe("database limits", () => {
+  it("keeps the maximum learning score within the attempt_summaries check (<= 88)", () => {
+    const scoredNodes = content.nodes.filter((node) => node.stage !== "pretest");
+    expect(scoredNodes.length * 2).toBeLessThanOrEqual(88);
+  });
+});

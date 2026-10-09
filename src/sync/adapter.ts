@@ -2,7 +2,7 @@ import type { LearningEvent } from "../domain/types";
 import { appConfig } from "../config";
 import { submissionBatches } from "./batches";
 import type { EvidenceAttempt, RosterMember, TeacherObservation } from "../domain/assessment";
-export interface FacultyWorkspaceData { roster:RosterMember[]; attempts:EvidenceAttempt[]; reviews:TeacherObservation[]; review:TeacherObservation; authorized?:boolean; }
+export interface FacultyWorkspaceData { roster:RosterMember[]; attempts:EvidenceAttempt[]; reviews:TeacherObservation[]; review:TeacherObservation; authorized?:boolean; mfaRequired?:boolean; }
 
 export interface SyncResult {
   acknowledgments: Array<{ eventId: string; serverReceiptTimestamp: string }>;
@@ -58,7 +58,13 @@ export interface BackendAdapter {
   /** The signed-in learner's own accepted events for one attempt (RLS: owner only). Used to restore a device. */
   loadOwnEvents?(attemptId:string):Promise<LearningEvent[]>;
   onAuthChange?(callback:(userId:string|null)=>void):()=>void;
+  /** Teacher two-step verification (authenticator app, TOTP). */
+  mfaStatus?():Promise<MfaStatus>;
+  mfaEnroll?():Promise<{factorId:string;qrCode:string;secret:string}>;
+  mfaVerify?(factorId:string,code:string):Promise<void>;
 }
+
+export interface MfaStatus { verified: boolean; factorId: string | null; }
 
 export class DemoBackendAdapter implements BackendAdapter {
   mode = "demo" as const;
@@ -78,6 +84,28 @@ export class SupabaseBackendAdapter implements BackendAdapter {
   async currentUserId() { const client = await this.clientPromise; return (await client.auth.getSession()).data.session?.user.id ?? null; }
   onAuthChange(callback:(userId:string|null)=>void) { let active=true; let unsubscribe:undefined|(()=>void); void this.clientPromise.then(client=>{if(!active)return; const subscription=client.auth.onAuthStateChange((_event,session)=>callback(session?.user.id??null));unsubscribe=()=>subscription.data.subscription.unsubscribe();});return()=>{active=false;unsubscribe?.();}; }
   async facultyWorkspace(operation:string,payload?:unknown):Promise<FacultyWorkspaceData> { const client=await this.clientPromise; const {data,error}=await client.functions.invoke("faculty-workspace",{body:{courseId:appConfig.courseId,operation,payload}});if(error)throw error;return data; }
+  async mfaStatus(): Promise<MfaStatus> {
+    const client = await this.clientPromise;
+    const [{ data: level, error: levelError }, { data: factors, error: factorError }] = await Promise.all([client.auth.mfa.getAuthenticatorAssuranceLevel(), client.auth.mfa.listFactors()]);
+    if (levelError) throw levelError;
+    if (factorError) throw factorError;
+    const verifiedFactor = factors?.totp?.find((factor) => factor.status === "verified");
+    return { verified: level?.currentLevel === "aal2", factorId: verifiedFactor?.id ?? null };
+  }
+  async mfaEnroll() {
+    const client = await this.clientPromise;
+    // Remove an unfinished enrolment first, so a teacher who closed the screen can start again.
+    const { data: factors } = await client.auth.mfa.listFactors();
+    for (const factor of factors?.all ?? []) if (factor.status === "unverified") await client.auth.mfa.unenroll({ factorId: factor.id });
+    const { data, error } = await client.auth.mfa.enroll({ factorType: "totp", friendlyName: "Pelvic Fx teacher" });
+    if (error) throw error;
+    return { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret };
+  }
+  async mfaVerify(factorId: string, code: string) {
+    const client = await this.clientPromise;
+    const { error } = await client.auth.mfa.challengeAndVerify({ factorId, code });
+    if (error) throw error;
+  }
   async recoverCompletion(attemptId:string) { const client=await this.clientPromise; const {data,error}=await client.functions.invoke("completion-status",{body:{courseId:appConfig.courseId,attemptId}});if(error)throw error;return data.completionReceipt as SyncResult["completionReceipt"]; }
   async signIn(email: string) {
     const client = await this.clientPromise;

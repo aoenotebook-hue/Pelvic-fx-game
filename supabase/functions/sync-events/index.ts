@@ -1,3 +1,4 @@
+import { withCors } from "../_shared/http.ts";
 import { withSupabase } from "npm:@supabase/server@1.9.1";
 import { validateLearnerEvent, recomputeServerSummary, serverRules } from "../../../src/domain/serverRules.ts";
 import {validateLearningSequence} from "../../../src/domain/learningRules.ts";
@@ -25,7 +26,7 @@ async function sha256(value: unknown) {
 }
 
 export default {
-  fetch: withSupabase({ auth: "user" }, async (request, ctx) => {
+  fetch: withCors(withSupabase({ auth: "user" }, async (request, ctx) => {
     if (request.method !== "POST") return reject("Method not allowed", 405);
     const raw = await request.text();
     if (new TextEncoder().encode(raw).length > serverRules.maxBatchBytes) return reject("Batch is too large", 413);
@@ -111,5 +112,5 @@ export default {
       if (!summaryError && summary.completed && owned.reporting_status === "reporting" && confirmed?.completed_at) completionReceipt = { status: "server_confirmed", completedAt: confirmed.completed_at, reportingAttemptId: id };
     }
     return Response.json({ acknowledgments, retryable, rejected, completionReceipt });
-  })
+  }))
 };

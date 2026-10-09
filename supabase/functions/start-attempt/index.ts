@@ -1,3 +1,4 @@
+import { withCors } from "../_shared/http.ts";
 import { belongsToCourse } from "../../../src/domain/access.ts";
 import { withSupabase } from "npm:@supabase/server@1.9.1";
 import {supportedVersion} from "../../../src/domain/serverRules.ts";
@@ -6,7 +7,7 @@ type Body = { attemptId?: string; courseId?: string; contentVersion?: string; ki
 const fail = (message: string, status = 400) => Response.json({ error: message }, { status });
 
 export default {
-  fetch: withSupabase({ auth: "user" }, async (request, ctx) => {
+  fetch: withCors(withSupabase({ auth: "user" }, async (request, ctx) => {
     if (request.method !== "POST") return fail("Method not allowed", 405);
     let body:Body;try{body=await request.json();}catch{return fail("Invalid JSON");}
     const userId = ctx.userClaims?.id;
@@ -39,5 +40,5 @@ export default {
     }
     if (reportingStatus === "conflict") await ctx.supabaseAdmin.from("audit_events").insert({ actor_id: userId, action: "attempt_conflict_detected", target_type: "attempt", target_id: body.attemptId, reason: `Reporting attempt remains ${reporting?.id}` });
     return Response.json({ attempt, reportingAttemptId: reporting?.id ?? body.attemptId, conflict: reportingStatus === "conflict" });
-  })
+  }))
 };

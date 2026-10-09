@@ -49,6 +49,8 @@ export function testEvidence(content:ContentVersion,events:LearningEvent[]){
  return {pre,post,mustPassIds,mustPassMet,gain,normalizedGain,passed:post.complete?post.firstCorrect>=POST_TEST_PASS_MARK&&mustPassMet:null};
 }
 export function csvText(rows:unknown[][]) {
-  const cell=(value:unknown)=> { const raw=String(value??""); return '"'+(/^[=+\-@\t\r]/.test(raw)?"'"+raw:raw).replaceAll('"','""')+'"'; };
+  // Spreadsheet formula injection: text that starts (after optional spaces) with = + - @ tab or CR is prefixed with '.
+  // Real numbers are left alone so they stay numeric in Excel/Google Sheets.
+  const cell=(value:unknown)=> { if(typeof value==="number"&&Number.isFinite(value))return String(value); const raw=String(value??""); return '"'+(/^[\s]*[=+\-@\t\r]/.test(raw)?"'"+raw:raw).replaceAll('"','""')+'"'; };
   return "\ufeff"+rows.map(row=>row.map(cell).join(",")).join("\r\n");
 }

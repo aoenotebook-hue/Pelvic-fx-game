@@ -40,6 +40,8 @@ export function deriveProgress(content: ContentVersion, events: LearningEvent[])
   for (const node of content.nodes) {
     const response = core.get(node.id);
     if (!response) continue;
+    // The pre-test is a baseline: it is reported separately and never adds to the learning score.
+    if (node.stage === "pretest") continue;
     if (answerIsCorrect(content, node.id, response.selectedOptionIds) && (!node.game || evaluate(node.game,response.gameAnswer).correct)) score += 2;
     else {
       const successful = (corrections.get(node.retryId) ?? []).some((event) => event.selectedOptionId === content.corrections.find((item) => item.id === node.retryId)?.correctOptionId && event.feedbackAcknowledged);

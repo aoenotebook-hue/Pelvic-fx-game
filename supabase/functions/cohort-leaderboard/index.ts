@@ -1,3 +1,4 @@
+import { withCors } from "../_shared/http.ts";
 import { belongsToCourse } from "../../../src/domain/access.ts";
 import { withSupabase } from "npm:@supabase/server@1.9.1";
 import { LEGACY_VERSION, clothingLevelFor, rankRewards } from "../../../src/domain/rewardRules.ts";
@@ -7,9 +8,10 @@ import { MINIGAME_VERSION } from "../../../src/games/spec.ts";
 const fail = (message: string, status = 400) => Response.json({ error: message }, { status });
 
 export default {
-  fetch: withSupabase({ auth: "user" }, async (request, ctx) => {
+  fetch: withCors(withSupabase({ auth: "user" }, async (request, ctx) => {
     if (request.method !== "POST") return fail("Method not allowed", 405);
-    const body = await request.json() as { courseId?: string; contentVersion?: string };
+    let body: { courseId?: string; contentVersion?: string };
+    try { body = await request.json(); } catch { return fail("Invalid JSON"); }
     const userId = ctx.userClaims?.id;
     if (!userId || !body.courseId || !body.contentVersion || !supportedVersion(body.contentVersion)) return fail("Invalid request");
 
@@ -44,5 +46,5 @@ export default {
         isCurrentLearner: row.userId === userId
       }))
     });
-  })
+  }))
 };

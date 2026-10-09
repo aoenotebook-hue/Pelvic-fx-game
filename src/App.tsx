@@ -7,6 +7,7 @@ import { MINIGAME_VERSION } from "./games/spec";
 import { correctionReviewed, LEARNING_VERSION } from "./domain/learningRules";
 import { LearningSummary } from "./learning/LearningSummary";
 import { FacultyWorkspace } from "./faculty/FacultyWorkspace";
+import { MfaSetup } from "./faculty/MfaSetup";
 import { activateContent, assetById, correctionById, pelvicTraumaContent, resourceById, sourceDocumentById, latestContent } from "./content/registry";
 import { computeRewards, clothingLevelFor, rankRewards, LEGACY_VERSION } from "./domain/rewards";
 import { beginRevision, resolveSession } from "./storage/session";
@@ -66,6 +67,9 @@ function App() {
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [staffAuthorized,setStaffAuthorized]=useState(appConfig.mode==="demo");
+  // A teacher whose role is confirmed but who has not yet passed two-step verification this session.
+  const [staffNeedsMfa,setStaffNeedsMfa]=useState(false);
+  const checkStaff=()=>backend.facultyWorkspace?.("context").then(result=>{setStaffAuthorized(Boolean(result.authorized));setStaffNeedsMfa(Boolean(result.mfaRequired));}).catch(()=>{setStaffAuthorized(false);setStaffNeedsMfa(false);});
   const [authRevision,setAuthRevision]=useState(0);
   const syncRunning=useRef(false);
 
@@ -97,7 +101,7 @@ function App() {
         accountKey=partition;attemptId=session.attemptId;setActiveLearnerId(userId??appConfig.demoUserId);
         activateContent(session.contentVersion);setActiveContentVersion(session.contentVersion);setActiveVersion(session.contentVersion);
         setEvents(stored);setOfflineState(pack?.state==="staging"?"downloading":pack?.state??"none");
-        if(appConfig.mode==="connected"){setView("home");void backend.facultyWorkspace?.("context").then(result=>{if(active&&revision===generation)setStaffAuthorized(Boolean(result.authorized));}).catch(()=>undefined);}
+        if(appConfig.mode==="connected"){setView("home");void backend.facultyWorkspace?.("context").then(result=>{if(active&&revision===generation){setStaffAuthorized(Boolean(result.authorized));setStaffNeedsMfa(Boolean(result.mfaRequired));}}).catch(()=>undefined);}
         setAuthRevision(value=>value+1);
       }catch{if(active)setNotice("Device storage is unavailable. Progress cannot be saved until this is resolved.");}
       finally{if(active&&revision===generation)setReady(true);}
@@ -253,7 +257,7 @@ function App() {
           <NavButton icon={<Map />} label={t("Quests", language)} active={["missions", "decision"].includes(view)} onClick={() => navigate("missions")} />
           <NavButton icon={<BookOpen />} label={t("Resources", language)} active={view === "resources"} onClick={() => navigate("resources")} />
           <NavButton icon={<ClipboardCheck />} label={t("My progress", language)} active={["progress", "reflection"].includes(view)} onClick={() => navigate("progress")} />
-          {staffAuthorized && <NavButton icon={<LayoutDashboard />} label={t(appConfig.mode === "demo" ? "Faculty demo" : "Faculty", language)} active={view === "faculty"} onClick={() => navigate("faculty")} />}
+          {(staffAuthorized || staffNeedsMfa) && <NavButton icon={<LayoutDashboard />} label={t(appConfig.mode === "demo" ? "Faculty demo" : "Faculty", language)} active={view === "faculty"} onClick={() => navigate("faculty")} />}
           {appConfig.mode === "connected" && <button className="quiet sign-out" onClick={()=>void signOut()}>{t("Sign out", language)}</button>}
           <NavButton icon={<CircleHelp />} label={t("Help", language)} active={view === "help"} onClick={() => navigate("help")} />
           <div className="nav-sync">
@@ -278,7 +282,8 @@ function App() {
           {view === "progress" && <ProgressView progress={progress} events={events} go={setView} sync={() => void sync(true)} avatarId={avatar.id} />}
           {view === "followup" && <FollowUp />}
           </>}
-          {view === "faculty" && (staffAuthorized ? <FacultyDashboard progress={progress} events={events} addEvent={addEvent} /> : <p>{language === "th" ? "ต้องเป็นอาจารย์ที่ได้รับมอบหมายและยืนยันตัวตนสองขั้นตอนแล้ว" : "Assigned faculty authorization (with two-step verification) is required."}</p>)}
+          {view === "faculty" && staffNeedsMfa && !staffAuthorized && <MfaSetup backend={backend} onVerified={() => void checkStaff()} />}
+          {view === "faculty" && !staffNeedsMfa && (staffAuthorized ? <FacultyDashboard progress={progress} events={events} addEvent={addEvent} /> : <p>{language === "th" ? "ต้องเป็นอาจารย์ที่ได้รับมอบหมายและยืนยันตัวตนสองขั้นตอนแล้ว" : "Assigned faculty authorization (with two-step verification) is required."}</p>)}
           {view === "help" && <HelpView addEvent={addEvent} events={events} offlineState={offlineState} installPrompt={installPrompt} setInstallPrompt={setInstallPrompt} signOut={signOut} />}
         </main>
       </div>

@@ -8,6 +8,12 @@ if (process.env.VERCEL_ENV === "production") {
   const errors = releaseConfigurationErrors({ ...loadEnv("production", process.cwd(), "VITE_"), ...process.env });
   if (errors.length) throw new Error(`Production release blocked: ${errors.join("; ")}. Demo fallback is not permitted.`);
 }
+// Every build (preview and local too) refuses to put a privileged key into browser code.
+{
+  const env = { ...loadEnv(process.env.NODE_ENV ?? "production", process.cwd(), "VITE_"), ...process.env };
+  const leaked = Object.entries(env).filter(([name, value]) => name.startsWith("VITE_") && typeof value === "string" && (value.startsWith("sb_secret_") || /service_role/.test(value) || /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value)));
+  if (leaked.length) throw new Error(`Build blocked: secret value in browser variable(s) ${leaked.map(([name]) => name).join(", ")}.`);
+}
 
 export default defineConfig({
   build: {
