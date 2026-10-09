@@ -155,6 +155,7 @@ export function MiniGameStation({
       ? "B"
       : "A";
   const isPretest = node.stage === "pretest";
+  // Test items show no source pages or review notes before the first answer (pre-test: never).
   const form = isPretest ? (postForm === "A" ? "B" : "A") : postForm;
   const authored = node.game!,
     spec = authored.variants?.[form] ?? authored,
@@ -240,6 +241,7 @@ export function MiniGameStation({
   const key = node.translation!.key[language],
     why = node.translation!.why[language];
   const showFeedback = Boolean(first && !isPretest && (!feedback || pendingReview));
+  const testLocked = isPretest || (node.stage === "gauntlet" && !first);
   // Name the cards the learner got wrong, so feedback is about their answer, not generic.
   const wrongCards = (() => {
     const response = pendingReview ? last : first;
@@ -324,7 +326,7 @@ export function MiniGameStation({
           getContent(node.contentVersion).governance.status === "approved" ? "เนื้อหาที่อาจารย์อนุมัติ • นักศึกษาภายใต้การกำกับ • ไม่ใช่คำสั่งรักษา" : "เนื้อหาฉบับร่าง • นักศึกษาภายใต้การกำกับ • ไม่ใช่คำสั่งรักษา",
         )}
       </p>
-      {node.reviewNote && (
+      {node.reviewNote && !testLocked && (
         <aside className="draft-label">
           {t(
             "Source comparison — not a bedside order. Review the source discrepancy before playing.",
@@ -588,7 +590,7 @@ export function MiniGameStation({
       </details>}
       {showFeedback && <FeedbackFigure node={node} />}
       <div className="source-chips">
-        {node.sourceRefs?.map((ref) => (
+        {!testLocked && node.sourceRefs?.map((ref) => (
           <a
             key={ref.doc + ref.page}
             href={`${sourcePath[ref.doc]}#page=${ref.page}`}

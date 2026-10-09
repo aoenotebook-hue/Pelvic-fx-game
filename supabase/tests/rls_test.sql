@@ -16,6 +16,9 @@ insert into public.response_events(event_id,attempt_id,user_id,content_version,c
  (gen_random_uuid(),'30000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000a1','v',1,'core_response','{}','h'),
  (gen_random_uuid(),'30000000-0000-0000-0000-0000000000a2','00000000-0000-0000-0000-0000000000a2','v',1,'core_response','{}','h'),
  (gen_random_uuid(),'30000000-0000-0000-0000-0000000000b1','00000000-0000-0000-0000-0000000000b1','v',1,'core_response','{}','h');
+insert into public.learner_profiles(user_id,course_id,cohort_id,student_id,pin_hash) values
+ ('00000000-0000-0000-0000-0000000000a1','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-00000000000a','S001','pbkdf2$1$00$00'),
+ ('00000000-0000-0000-0000-0000000000a2','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-00000000000a','S002','pbkdf2$1$00$00');
 \unset ON_ERROR_STOP
 
 create or replace function pg_temp.as_user(sub text, aal text) returns void language plpgsql as $$
@@ -25,6 +28,9 @@ set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1','aal1');
 select 'learner1 sees own events only (expect 1)' as check, count(*) from public.response_events;
 select 'learner1 sees memberships (expect 1)' as check, count(*) from public.memberships;
+select 'learner1 sees own profile only (expect 1)' as check, count(*) from public.learner_profiles where student_id is not null;
+select pin_hash from public.learner_profiles; -- must fail: permission denied for the code hash
+update public.learner_profiles set pin_hash = null; -- must fail: learners cannot write profiles
 select 'learner1 sees role_assignments (expect 0)' as check, count(*) from public.role_assignments;
 insert into public.role_assignments(user_id,role,cohort_id,assigned_by) values ('00000000-0000-0000-0000-0000000000a1','faculty','20000000-0000-0000-0000-00000000000a','00000000-0000-0000-0000-0000000000a1');
 insert into public.response_events(event_id,attempt_id,user_id,content_version,client_sequence,event_type,payload,payload_sha256) values (gen_random_uuid(),'30000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000a1','v',2,'core_response','{}','h');

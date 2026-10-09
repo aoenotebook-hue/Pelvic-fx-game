@@ -220,8 +220,8 @@ export function MiniGameJourney({
           <strong className="big-score">{tests.pre.firstCorrect}/{tests.pre.expected}</strong>
           <p>
             {t(
-              "This is your starting point, not a grade. Every topic returns in the cases, and the same kind of 8 items come back at the end of the shift so you can see how much you learned.",
-              "นี่คือจุดเริ่มต้น ไม่ใช่เกรด ทุกหัวข้อจะได้ฝึกในเคส และจะมีแบบทดสอบแบบเดียวกัน 8 ข้อท้ายเวรเพื่อดูว่าเรียนรู้เพิ่มขึ้นเท่าไร",
+              `This is your starting point, not a grade. Every topic returns in the cases, and the same kind of ${tests.post.expected} items come back at the end so you can see how much you learned.`,
+              `นี่คือจุดเริ่มต้น ไม่ใช่เกรด ทุกหัวข้อจะได้ฝึกในเคส และจะมีแบบทดสอบแบบเดียวกัน ${tests.post.expected} ข้อท้ายเวรเพื่อดูว่าเรียนรู้เพิ่มขึ้นเท่าไร`,
             )}
           </p>
         </article>
@@ -477,11 +477,11 @@ export function MiniGameJourney({
       </h1>
       {!pretestDone && (
         <article className="panel pretest-gate">
-          <h2>{t("Start with the 8-item pre-test", "เริ่มด้วยแบบทดสอบก่อนเรียน 8 ข้อ")}</h2>
+          <h2>{t(`Start with the ${tests.pre.expected}-item pre-test`, `เริ่มด้วยแบบทดสอบก่อนเรียน ${tests.pre.expected} ข้อ`)}</h2>
           <p>
             {t(
-              "About 5 minutes. No hints, no penalty — it shows your teacher (and you) where you start.",
-              "ประมาณ 5 นาที ไม่มีคำใบ้ ไม่มีการหักคะแนน ช่วยให้อาจารย์ (และคุณ) เห็นจุดเริ่มต้น",
+              `About ${tests.pre.expected > 3 ? 5 : 2} minutes. No hints, no penalty — it shows your teacher (and you) where you start.`,
+              `ประมาณ ${tests.pre.expected > 3 ? 5 : 2} นาที ไม่มีคำใบ้ ไม่มีการหักคะแนน ช่วยให้อาจารย์ (และคุณ) เห็นจุดเริ่มต้น`,
             )}
           </p>
           <button

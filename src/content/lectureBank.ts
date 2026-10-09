@@ -1804,21 +1804,31 @@ export const lectureBankContent: ContentVersion = {
 };
 
 
-const gameFacts = (spec: MiniGameSpec): string[] => [
-  spec.instruction.en,
-  ...spec.cards.map((card) => card.label.en),
-  ...(spec.bins ?? []).map((bin) => bin.label.en),
-  ...(spec.rounds ?? []).flatMap(gameFacts),
-];
-const gameFactsTh = (spec: MiniGameSpec): string[] => [
-  spec.instruction.th,
-  ...spec.cards.map((card) => card.label.th),
-  ...(spec.bins ?? []).map((bin) => bin.label.th),
-  ...(spec.rounds ?? []).flatMap(gameFactsTh),
-];
+/** Only the correct content of a station (never distractor cards), so the reading teaches no errors. */
+const correctFacts = (spec: MiniGameSpec): LocalText[] => {
+  const label = (id: string) => spec.cards.find((card) => card.id === id)?.label;
+  const bin = (id: string) => spec.bins?.find((item) => item.id === id)?.label;
+  const own: LocalText[] = (() => {
+    switch (spec.kind) {
+      case "card_sort": case "handover_builder":
+        return spec.cards.filter((card) => card.target && bin(card.target)).map((card) => bi(`${card.label.en} → ${bin(card.target!)!.en}`, `${card.label.th} → ${bin(card.target!)!.th}`));
+      case "sequence": {
+        const steps = (spec.order ?? []).map(label).filter(Boolean) as LocalText[];
+        return steps.length ? [bi(steps.map((step) => step.en).join(" → "), steps.map((step) => step.th).join(" → "))] : [];
+      }
+      case "memory_match": {
+        const groups = [...new Set(spec.cards.map((card) => card.target).filter(Boolean))] as string[];
+        return groups.map((group) => { const pair = spec.cards.filter((card) => card.target === group); return bi(pair.map((card) => card.label.en).join(" ↔ "), pair.map((card) => card.label.th).join(" ↔ ")); });
+      }
+      case "ring_trace": return [spec.instruction];
+      case "gauge": return [];
+      default: return ((spec.targets ?? spec.order ?? []).map(label).filter(Boolean) as LocalText[]);
+    }
+  })();
+  return [...own, ...(spec.rounds ?? []).flatMap(correctFacts)];
+};
 export type LectureNote = { id: string; lo: LOId[]; title: LocalText; key: LocalText; points: LocalText[]; guideline?: LocalText; doc: "S" | "H"; page: number };
 /** Every lecture fact taught by the station bank, grouped for reading (Resources → Lecture notes). */
 export const lectureNotes: LectureNote[] = practiceRows.map((row) => {
-  const en = gameFacts(row.game), th = gameFactsTh(row.game);
-  return { id: row.id, lo: row.lo, title: row.title, key: row.key, guideline: row.guideline, doc: row.doc ?? "S", page: row.page, points: en.map((text, i) => bi(text, th[i] ?? text)) };
+  return { id: row.id, lo: row.lo, title: row.title, key: row.key, guideline: row.guideline, doc: row.doc ?? "S", page: row.page, points: correctFacts(row.game) };
 });

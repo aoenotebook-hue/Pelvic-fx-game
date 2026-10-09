@@ -538,17 +538,18 @@ function AccessView() {
   if(appConfig.mode==="demo")return <section className="reading page-enter"><h1>{tr("Local demonstration","โหมดทดลองในเครื่อง")}</h1><p>{tr("Fictional local demonstration. Course reporting requires the connected service.","โหมดทดลองด้วยข้อมูลสมมติ การส่งผลรายวิชาต้องใช้ระบบที่เชื่อมต่อ")}</p></section>;
   return <section className="reading page-enter">
     <h1>{teacher?tr("Teacher sign-in","เข้าสู่ระบบอาจารย์"):tr("Enter game","เข้าเกม")}</h1>
-    {teacher?<form onSubmit={event=>{event.preventDefault();void teacherLink();}}>
+    {teacher?<form className="entry-form" onSubmit={event=>{event.preventDefault();void teacherLink();}}>
       <label><span>{tr("Email address","อีเมล")}</span><input autoComplete="email" required type="email" value={email} onChange={event=>setEmail(event.target.value)} /></label>
       <button className="primary" disabled={busy||!email.trim()}>{busy?tr("Sending…","กำลังส่ง…"):tr("Send teacher sign-in link","ส่งลิงก์เข้าสู่ระบบ")}</button>
-    </form>:<form onSubmit={event=>{event.preventDefault();void enter();}}>
+    </form>:<form className="entry-form" onSubmit={event=>{event.preventDefault();void enter();}}>
       <label htmlFor="student-id"><span>{tr("Student ID","รหัสนักศึกษา")}</span><input id="student-id" autoComplete="username" autoCapitalize="characters" required type="text" maxLength={40} value={studentId} onChange={event=>{setStudentId(event.target.value);setSetup(false);}} /></label>
       {pinInput(code,setCode,setup?tr("Choose a 4-digit code","ตั้งรหัส 4 หลัก"):tr("Your 4-digit code","รหัส 4 หลักของคุณ"),"student-code")}
       {setup&&pinInput(confirm,setConfirm,tr("Type the code again","พิมพ์รหัสอีกครั้ง"),"student-code-confirm")}
       <button className="primary" disabled={busy||!idValid||!codeValid||(setup&&confirm.length!==4)}>{busy?tr("Entering…","กำลังเข้าสู่ระบบ…"):setup?tr("Save code and enter","บันทึกรหัสและเข้าเกม"):tr("Enter game","เข้าเกม")}</button>
+      <p role="status" aria-live="polite" className="entry-status">{status}</p>
       <small>{tr("First time? Type your student ID and choose any 4 digits; you will be asked to confirm them. Use the same ID and code to continue on any device. Do not share your code. Forgot it? Ask your teacher to reset it.","ครั้งแรก? ใส่รหัสนักศึกษาและตั้งรหัส 4 หลักได้เอง ระบบจะให้ยืนยันอีกครั้ง ใช้รหัสเดิมเพื่อเล่นต่อได้ทุกเครื่อง อย่าบอกรหัสกับผู้อื่น ลืมรหัส? ขอให้อาจารย์รีเซ็ต")}</small>
     </form>}
-    <p role="status" aria-live="polite">{status}</p>
+    {teacher&&<p role="status" aria-live="polite" className="entry-status">{status}</p>}
     <p><button className="text-button" onClick={()=>{setTeacher(!teacher);setStatus("");}}>{teacher?tr("Student entry","เข้าเกมสำหรับนักศึกษา"):tr("Teacher access","สำหรับอาจารย์")}</button></p>
   </section>;
 }

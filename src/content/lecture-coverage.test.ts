@@ -76,6 +76,9 @@ const reading = lectureNotes.map((note) => [note.title.en, note.key.en, ...note.
 describe("lecture coverage", () => {
   for (const [fact, pattern] of LECTURE_FACTS) it(fact, () => expect(taught).toMatch(pattern));
   for (const [fact, pattern] of LECTURE_FACTS) it(`reading: ${fact}`, () => expect(reading).toMatch(pattern));
+  it("reading never lists distractor cards as facts", () => {
+    for (const wrong of [/several days until surgery/, /Centre it on the iliac crests/, /Blind Foley despite meatal blood/, /Let normal pelvic AP exclude GU injury/]) expect(reading).not.toMatch(wrong);
+  });
 
   it("every objective LO1–LO7 has at least two practice stations", () => {
     for (let i = 1; i <= 7; i++) expect(scored.filter((node) => node.objectiveIds?.includes(`LO${i}` as never)).length).toBeGreaterThanOrEqual(2);

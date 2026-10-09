@@ -6,5 +6,9 @@ DB=pelvic_rls_test_$$
 createdb "$DB"
 trap 'dropdb "$DB"' EXIT
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f supabase/tests/auth_stub.sql
-for file in supabase/migrations/*.sql; do psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$file"; done
+for file in supabase/migrations/*.sql; do
+  # The Sheets schedule needs pg_cron/pg_net (hosted Supabase only) and changes no tables or policies.
+  case "$file" in *sheet_schedule.sql) continue;; esac
+  psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$file"
+done
 psql -d "$DB" -f supabase/tests/rls_test.sql 2>&1 | grep -E "expect|ERROR"
