@@ -145,13 +145,18 @@ export class SupabaseBackendAdapter implements BackendAdapter {
       if(error){result.retryable.push(...batches.slice(index).flat().map(event=>event.eventId));break;}
       const next=data as SyncResult;result.acknowledgments.push(...next.acknowledgments);result.retryable.push(...next.retryable);result.rejected.push(...next.rejected);
       if(next.completionReceipt)result.completionReceipt=next.completionReceipt;
-      if(next.retryable.length||next.rejected.length){result.retryable.push(...batches.slice(index+1).flat().map(event=>event.eventId));break;}
+      if(next.retryable.length){result.retryable.push(...batches.slice(index+1).flat().map(event=>event.eventId));break;}
     }
     return result;
   }
 }
 
+let shared: BackendAdapter | null = null;
+/** One adapter (and so one Supabase auth client) per page; separate clients would race over the session. */
 export function createBackendAdapter(): BackendAdapter {
-  if (appConfig.mode === "connected" && appConfig.supabaseUrl && appConfig.supabasePublishableKey) return new SupabaseBackendAdapter(appConfig.supabaseUrl, appConfig.supabasePublishableKey);
-  return new DemoBackendAdapter();
+  if (shared) return shared;
+  shared = appConfig.mode === "connected" && appConfig.supabaseUrl && appConfig.supabasePublishableKey
+    ? new SupabaseBackendAdapter(appConfig.supabaseUrl, appConfig.supabasePublishableKey)
+    : new DemoBackendAdapter();
+  return shared;
 }

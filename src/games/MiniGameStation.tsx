@@ -58,6 +58,14 @@ export function MiniGameStation({
     [rush, setRush] = useState(false),
     [elapsed, setElapsed] = useState(0);
   const saving = useRef(false);
+  // Time on task and hint use are recorded for the teacher's analysis; they never change the score.
+  const startedAt = useRef(Date.now());
+  const hintsUsed = useRef(0);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    startedAt.current = Date.now();
+    hintsUsed.current = 0;
+  }, [node.id]);
   const draftKey = `minigame:${partition}:${node.contentVersion}:${node.id}:${retries.length}:${feedback ? "correction" : "initial"}`;
   const prepared = events.find(
     (e) => e.type === "handover_prepared" && e.nodeId === node.id,
@@ -105,12 +113,14 @@ export function MiniGameStation({
       loadedKey === draftKey &&
       (!first || (feedback && !correct && !pendingReview && !fixed))
     )
-      void getDb().then((db) =>
-        db.put("settings", {
-          key: draftKey,
-          value: { answer, round, roundAnswers, reason, confidence },
-        }),
-      );
+      void getDb()
+        .then((db) =>
+          db.put("settings", {
+            key: draftKey,
+            value: { answer, round, roundAnswers, reason, confidence },
+          }),
+        )
+        .catch(() => undefined); // A draft is a convenience; the learner can still submit.
   }, [
     answer,
     round,
@@ -119,6 +129,10 @@ export function MiniGameStation({
     confidence,
     loaded,
     first,
+    feedback,
+    correct,
+    pendingReview,
+    fixed,
     draftKey,
     loadedKey,
   ]);
@@ -152,8 +166,13 @@ export function MiniGameStation({
     }
     saving.current = true;
     setBusy(true);
+    try {
     const raw = makeAnswer(),
       result = evaluate(authored, raw);
+    const timing = {
+      elapsedMs: Math.max(0, Date.now() - startedAt.current),
+      hintsUsed: hintsUsed.current,
+    };
     await emit(
       first
         ? {
@@ -163,6 +182,7 @@ export function MiniGameStation({
             gameAnswer: raw,
             gameScore: result.score,
             feedbackAcknowledged: false,
+            ...timing,
           }
         : {
             type: "core_response",
@@ -177,9 +197,12 @@ export function MiniGameStation({
                 ? { rationale: reason.trim() }
                 : {}),
             ...(confidence ? { confidence } : {}),
+            ...timing,
           },
     );
+    startedAt.current = Date.now();
     if (sound) {
+      try {
       const audio = new AudioContext();
       const oscillator = audio.createOscillator(),
         gain = audio.createGain();
@@ -191,9 +214,15 @@ export function MiniGameStation({
       oscillator.start();
       oscillator.stop(audio.currentTime + 0.18);
       oscillator.onended = () => void audio.close();
+      } catch {
+        // Sound is optional; a blocked audio device must never lock the station.
+      }
     }
-    setBusy(false);
-    saving.current = false;
+    requestAnimationFrame(() => heading.current?.focus());
+    } finally {
+      setBusy(false);
+      saving.current = false;
+    }
   };
   const reset = () => {
     setRound(0);
@@ -209,7 +238,7 @@ export function MiniGameStation({
         <img
           src={
             node.missionId === "mission-0"
-              ? "/assets/student-avatar-4.png"
+              ? `/assets/upgrades/character-${character}-level-1.png`
               : `/assets/patients-v2/patient-${Math.min(3, Number(node.missionId.split("-")[1]) || 1)}.png`
           }
           alt={t("Fictional teaching character", "ตัวละครจำลองเพื่อเรียน")}
@@ -220,7 +249,9 @@ export function MiniGameStation({
               ? t("STATION", "สถานี")
               : node.stage === "boss"
                 ? t("BOSS RECALL", "BOSS ทบทวน")
-                : t("TRAUMA SHIFT", "TRAUMA SHIFT")}{" "}
+                : node.stage === "pretest"
+                  ? t("PRE-TEST", "แบบทดสอบก่อนเรียน")
+                  : t("TRAUMA SHIFT · POST-TEST", "เวรสุดท้าย · แบบทดสอบหลังเรียน")}{" "}
             · {node.id}
           </small>
           <p>{node.translation!.story[language]}</p>
@@ -330,7 +361,24 @@ export function MiniGameStation({
               "Feedback การเรียน อาการผู้ป่วยไม่ได้เปลี่ยน",
             )}
           />
-          <h2>
+          {(() => {
+            const passed = pendingReview
+              ? Boolean(last?.selectedOptionId.endsWith("PASS"))
+              : correct;
+            return (
+              <p className={passed ? "result-line ok" : "result-line retry"}>
+                <span aria-hidden="true">{passed ? "✓" : "↻"}</span>{" "}
+                {passed
+                  ? pendingReview
+                    ? t("Correct on the correction round.", "รอบแก้ไขถูกต้องแล้ว")
+                    : t("Correct on your first try!", "ถูกต้องตั้งแต่ครั้งแรก!")
+                  : pendingReview
+                    ? t("Not yet — read the explanation, then try the correction round again.", "ยังไม่ถูก — อ่านคำอธิบาย แล้วลองรอบแก้ไขอีกครั้ง")
+                    : t("Not yet — read why, then a correction round opens.", "ยังไม่ถูก — อ่านเหตุผล แล้วจะเปิดรอบแก้ไข")}
+              </p>
+            );
+          })()}
+          <h2 ref={heading} tabIndex={-1}>
             {t(
               "Key evidence → meaning → supervised action",
               "หลักฐาน → ความหมาย → การดำเนินการภายใต้การกำกับ",
@@ -377,10 +425,10 @@ export function MiniGameStation({
         </article>
       ) : first && (correct || fixed) ? (
         <article className="game-feedback reward-pop">
-          <h2>{t("Station cleared!", "ผ่านสถานีแล้ว!")}</h2>
+          <h2 ref={heading} tabIndex={-1}>{t("Station cleared!", "ผ่านสถานีแล้ว!")}</h2>
           <div
             className="station-stars"
-            aria-label={`${starsFor(first.gameScore ?? 0)} stars`}
+            aria-label={t(`${starsFor(first.gameScore ?? 0)} of 3 stars`, `${starsFor(first.gameScore ?? 0)} จาก 3 ดาว`)}
           >
             {"★".repeat(starsFor(first.gameScore ?? 0))}
           </div>
@@ -477,30 +525,19 @@ export function MiniGameStation({
       )}
       <details
         onToggle={(event) => {
-          if (event.currentTarget.open)
+          if (event.currentTarget.open) {
+            hintsUsed.current += 1;
             void emit({
               type: "resource_viewed",
               resourceId: node.resourceIds[0],
               nodeId: node.id,
               stage: first ? "correction" : "question",
             });
+          }
         }}
       >
         <summary>{t("Hint / reference card", "คำใบ้ / บัตรอ้างอิง")}</summary>
         <p>{key}</p>
-        <button
-          className="secondary"
-          onClick={() =>
-            void emit({
-              type: "resource_viewed",
-              resourceId: node.resourceIds[0],
-              nodeId: node.id,
-              stage: first ? "correction" : "question",
-            })
-          }
-        >
-          {t("Record reference use", "บันทึกการเปิดอ้างอิง")}
-        </button>
       </details>
       {showFeedback && <FeedbackFigure node={node} />}
       <div className="source-chips">
@@ -560,7 +597,7 @@ function FeedbackFigure({ node }: { node: Node }) {
   const figure =
     node.sourceRefs?.[0]?.doc === "H" && page === 17
       ? "binder-manikin-page17.jpg"
-      : page && [5, 11, 16, 38, 41, 44, 50].includes(page)
+      : node.sourceRefs?.[0]?.doc === "S" && page && [5, 11, 16, 38, 41, 44, 50].includes(page)
         ? `slide-${page}.jpg`
         : null;
   if (!figure) return null;

@@ -2,7 +2,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { LearningEvent } from "../domain/types";
 import {validateLearningSequence} from "../domain/learningRules";
 
-type StoredEvent = LearningEvent & { accountKey: string; outboxStatus: "pending" | "acknowledged" | "failed"; };
+type StoredEvent = LearningEvent & { accountKey: string; outboxStatus: "pending" | "acknowledged" | "failed" | "rejected"; };
 interface Draft { key: string; accountKey: string; attemptId: string; nodeId: string; rationale: string; updatedAt: string; }
 interface OfflinePack { key: string; accountKey: string; version: string; state: "staging" | "ready" | "incomplete"; expectedBytes: number; verifiedBytes: number; updatedAt: string; }
 interface Setting { key: string; value: unknown; }
@@ -71,6 +71,7 @@ export async function loadDraft(accountKey: string, attemptId: string, nodeId: s
 
 export async function pendingEvents(accountKey: string): Promise<LearningEvent[]> {
   return (await (await getDb()).getAllFromIndex("events", "by-outbox", [accountKey, "pending"]))
+    .sort((a, b) => a.attemptId.localeCompare(b.attemptId) || a.clientSequence - b.clientSequence)
     .map(({ accountKey: _accountKey, outboxStatus: _outboxStatus, ...event }) => event as LearningEvent);
 }
 
@@ -91,7 +92,13 @@ export async function hasCompletionReceipt(accountKey: string, attemptId: string
   return value?.status === "server_confirmed" && value.reportingAttemptId === attemptId;
 }
 export async function storeSubmissionRejections(accountKey:string,rejected:Array<{eventId:string;reason:string}>) {
- const db=await getDb();for(const item of rejected)await db.put("settings",{key:`rejected:${accountKey}:${item.eventId}`,value:item});
+ const db=await getDb();
+ for(const item of rejected){
+  await db.put("settings",{key:`rejected:${accountKey}:${item.eventId}`,value:item});
+  // A rejected event is final: stop re-sending it. The server keeps its position, so later events still sync.
+  const stored=await db.get("events",item.eventId);
+  if(stored?.accountKey===accountKey&&stored.outboxStatus==="pending")await db.put("events",{...stored,outboxStatus:"rejected"});
+ }
 }
 export async function submissionRejections(accountKey:string):Promise<Array<{eventId:string;reason:string}>> {
  const settings=await(await getDb()).getAll("settings");return settings.filter(setting=>setting.key.startsWith(`rejected:${accountKey}:`)).map(setting=>setting.value as {eventId:string;reason:string});

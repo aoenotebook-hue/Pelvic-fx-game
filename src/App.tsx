@@ -14,6 +14,9 @@ import { answerIsCorrect, deriveProgress, nextClientSequence } from "./domain/en
 import type { Confidence, LearningEvent, Node, SafetyConceptId } from "./domain/types";
 import { acknowledgeEvents, hasCompletionReceipt, appendEventAtomically, getOfflinePack, loadDraft, loadEvents, pendingEvents, saveDraft, stageOfflinePack, storeSubmissionRejections, submissionRejections } from "./storage/db";
 import { createBackendAdapter } from "./sync/adapter";
+import { validateLearnerEvent } from "./domain/serverRules";
+
+const SYNCED_TYPES = new Set(["core_response","correction_response","feedback_ack","correction_feedback_ack","handover_prepared","resource_viewed","reflection_submitted"]);
 import type { LeaderboardRow } from "./sync/adapter";
 import { createBaseEvent, setActiveLearnerId, setActiveContentVersion } from "./utils/events";
 import { I18nContext, localizeCorrection, localizeMission, localizeNode, localizeResource, t, useLanguage, type Language } from "./i18n";
@@ -103,6 +106,8 @@ function App() {
   const addEvent = useCallback(async (event: LearningEvent) => {
     try {
       const partition=accountKey;
+      // Check with the same rules the server uses, so an event the server would reject is never queued.
+      if (SYNCED_TYPES.has(event.type)) { const problem = validateLearnerEvent(event as unknown as Record<string, unknown>); if (problem) { setNotice(`Not saved: ${problem}`); return false; } }
       const saved=await appendEventAtomically(partition, event);
       if(partition===accountKey && event.attemptId===attemptId) setEvents((current) => current.some(item=>item.eventId===event.eventId)?current:[...current,saved??event]);
       setNotice("Saved on this device");

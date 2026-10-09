@@ -74,7 +74,7 @@ export interface Node {
   objectiveIds?: LOId[];
   sourceRefs?: {doc:"S"|"H"|"LP";page:number}[];
   reviewNote?: string;
-  stage?: "practice"|"boss"|"gauntlet";
+  stage?: "pretest"|"practice"|"boss"|"gauntlet";
   translation?: {title:LocalText;story:LocalText;key:LocalText;why:LocalText};
   rationaleRequired?: boolean;
   explanationBeforeChoices?: boolean;
@@ -194,6 +194,9 @@ export interface CoreResponseEvent extends BaseEvent {
   rationale?: string;
   gameAnswer?: unknown;
   gameScore?: number;
+  /** Time on task (ms) and hint openings — analysis only, never scored. */
+  elapsedMs?: number;
+  hintsUsed?: number;
 }
 
 export interface FeedbackEvent extends BaseEvent { type: "feedback_ack"; nodeId: string; }
@@ -204,6 +207,9 @@ export interface CorrectionResponseEvent extends BaseEvent {
   feedbackAcknowledged: boolean;
   gameAnswer?: unknown;
   gameScore?: number;
+  /** Time on task (ms) and hint openings — analysis only, never scored. */
+  elapsedMs?: number;
+  hintsUsed?: number;
 }
 export interface ResourceEvent extends BaseEvent { type: "resource_viewed"; resourceId: string; nodeId?: string; stage?: "question" | "feedback" | "correction"; }
 export interface CorrectionAcknowledgment extends BaseEvent { type: "correction_feedback_ack"; correctionId: string; responseEventId: string; }

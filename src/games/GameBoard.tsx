@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ClinicalArt } from "../art/ClinicalArt";
 import type { MiniGameSpec } from "./spec";
 import type { Language } from "../i18n";
@@ -34,6 +34,11 @@ export function GameBoard({
         .flat() ?? [],
     ),
     [trace, setTrace] = useState<string[]>(restored?.visited ?? []);
+  // A slider starts at a real value, so the learner may submit it unchanged.
+  useEffect(() => {
+    if (spec.kind === "gauge" && initialAnswer == null) onChange(spec.range?.[0] ?? 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const t = (en: string, th: string) => (language === "th" ? th : en);
   const cards = [...spec.cards].sort((a, b) => {
     const hash = (id: string) =>
