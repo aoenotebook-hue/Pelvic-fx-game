@@ -36,7 +36,7 @@
 
 ## Still to do on the live services (needs your credentials; not done from this repository)
 
-- Apply `supabase/migrations/202610090001_security_hardening.sql` in staging, then production.
+- Apply `supabase/migrations/202610090002_security_hardening.sql` in staging, then production.
 - Deploy the functions (`sync-events`, `start-attempt`, `faculty-workspace`, `completion-status`,
   `cohort-leaderboard`, `sheet-export`) and set `ALLOWED_ORIGINS`.
 - Enable TOTP MFA in Supabase Auth, and set the Site URL and redirect URLs to the production domain only.
