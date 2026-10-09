@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { pelvicTraumaContentV4 as content } from "../content/content.v4";
+import { lectureBankContent as content } from "../content/lectureBank";
+import { pelvicTraumaContentV6 } from "../content/content.v6";
+import { answerFor } from "../games/answers";
+import { testEvidence } from "./assessment";
 import { buildEvaluationWorkbook, EVALUATION_TABS, tabValues, bangkok } from "./evaluationExport";
 import { evaluate, outcomeId } from "../games/evaluate";
-import { solve, wrong } from "../test/answers";
+import { solve, wrong } from "../games/answers";
 import type { LearningEvent, Node } from "./types";
 import type { EvidenceAttempt } from "./assessment";
 
@@ -51,11 +54,11 @@ describe("evaluation workbook", () => {
   it("computes pre/post, pass standard and normalized gain per learner", () => {
     const row = book.attempts.find((item) => item[1] === "S001")!;
     const col = (name: string) => row[EVALUATION_TABS.attempts.headers.indexOf(name as never)];
-    expect(col("Pre-test /8")).toBe(2);
-    expect(col("Post-test /8")).toBe(7);
+    expect(col("Pre-test score")).toBe(2);
+    expect(col("Post-test score")).toBe(7);
     expect(col("Pass standard met")).toBe(true);
     expect(col("Normalized gain (g)")).toBeCloseTo(5 / 6, 2);
-    expect(col("Practice first-try /24")).toBe(20);
+    expect(col("Practice first-try score")).toBe(20);
     expect(col("Time on task (min)")).toBeGreaterThan(0);
   });
 
@@ -90,5 +93,22 @@ describe("evaluation workbook", () => {
     expect(book.feedback).toHaveLength(7);
     expect(bangkok("2026-10-09T02:05:00Z")).toBe("2026-10-09 09:05");
     expect(tabValues(book, "log")[0]).toEqual(["Item", "Value"]);
+  });
+
+  it("focused edition: 3-item pre/post, pass = 2 of 3 first try and both safety items", () => {
+    const v6 = pelvicTraumaContentV6, posts = v6.nodes.filter((node) => node.stage === "gauntlet");
+    expect(v6.nodes.filter((node) => node.stage === "pretest")).toHaveLength(3);
+    expect(posts.map((node) => [node.id, Boolean(node.mustPass)])).toEqual([["FS1", true], ["FS2", true], ["FS3", false]]);
+    let sequence = 0;
+    const answer = (node: Node, right: boolean): LearningEvent => {
+      const raw = answerFor(node.game!, right);
+      return { eventId: crypto.randomUUID(), attemptId: "v6", learnerId: "S1", contentVersion: v6.id, clientSequence: ++sequence, clientTimestamp: "2026-10-09T02:00:00Z", serverReceiptTimestamp: null, type: "core_response", nodeId: node.id, selectedOptionIds: [outcomeId(node.id, node.game!, raw)], presentationOrder: [], gameAnswer: raw, gameScore: evaluate(node.game!, raw).score } as LearningEvent;
+    };
+    const safeOnly = testEvidence(v6, posts.map((node) => answer(node, node.mustPass === true)));
+    expect(safeOnly.passMark).toBe(2);
+    expect(safeOnly.passed).toBe(true);
+    const missedSafety = testEvidence(v6, posts.map((node) => answer(node, node.id !== "FS2")));
+    expect(missedSafety.post.firstCorrect).toBe(2);
+    expect(missedSafety.passed).toBe(false);
   });
 });

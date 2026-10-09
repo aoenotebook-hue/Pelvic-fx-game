@@ -123,29 +123,29 @@ const shockClasses = sort(
   [
     c(
       "I",
-      "<750 mL (<15%); normal/minimally increased HR; normal SBP",
-      "<750 mL (<15%); HR ปกติ/เพิ่มเล็กน้อย SBP ปกติ",
+      "<750 mL (<15%); HR normal/slightly up; RR normal; SBP normal; urine normal",
+      "<750 mL (<15%); HR ปกติ/เพิ่มเล็กน้อย RR ปกติ SBP ปกติ ปัสสาวะปกติ",
       "blood",
       "I",
     ),
     c(
       "II",
-      "750–1500 mL (15–30%); HR >100; SBP normal; urine 20–30 mL/h",
-      "750–1500 mL (15–30%); HR >100 SBP ปกติ urine 20–30 mL/h",
+      "750–1500 mL (15–30%); HR >100; RR 20–30; SBP normal; urine 20–30 mL/h",
+      "750–1500 mL (15–30%); HR >100 RR 20–30 SBP ปกติ ปัสสาวะ 20–30 mL/h",
       "blood",
       "II",
     ),
     c(
       "III",
-      "1500–2000 mL (30–40%); HR >120; SBP falls; urine 5–15 mL/h",
-      "1500–2000 mL (30–40%); HR >120 SBP ลด urine 5–15 mL/h",
+      "1500–2000 mL (30–40%); HR >120; RR 30–40; SBP falls; urine 5–15 mL/h",
+      "1500–2000 mL (30–40%); HR >120 RR 30–40 SBP ลด ปัสสาวะ 5–15 mL/h",
       "blood",
       "III",
     ),
     c(
       "IV",
-      ">2000 mL (>40%); HR >140; SBP falls greatly; minimal urine",
-      ">2000 mL (>40%); HR >140 SBP ลดมาก urine น้อยมาก",
+      ">2000 mL (>40%); HR >140; RR >35; SBP falls greatly; minimal urine",
+      ">2000 mL (>40%); HR >140 RR >35 SBP ลดมาก ปัสสาวะน้อยมาก",
       "blood",
       "IV",
     ),
@@ -181,19 +181,49 @@ const binder = combo([
   pick(
     [
       c(
-        "padding",
-        "Knees/ankles padded; supported alignment",
-        "รองเข่าและข้อเท้า จัดแนวอย่างปลอดภัย",
+        "all",
+        "Apply initially in every suspected pelvic fracture",
+        "ใส่ตั้งแต่แรกในผู้ป่วยทุกรายที่สงสัย pelvic fracture",
         "binder",
       ),
       c(
-        "force",
-        "Force rotation despite hip injury",
-        "ฝืนหมุนขาทั้งที่สงสัย hip injury",
+        "knees",
+        "Slide it in under the knees, then move it up to the trochanters",
+        "สอดใต้เข่า แล้วเลื่อนขึ้นไปที่ greater trochanter",
+        "binder",
+      ),
+      c(
+        "legs",
+        "Legs internally rotated and adducted; pad between knees and ankles",
+        "จัดขาหมุนเข้าและหุบเข้าหากัน รองผ้าระหว่างเข่าและข้อเท้า",
         "body",
       ),
+      c(
+        "wound",
+        "Dress any wound under the binder first",
+        "ทำแผลบริเวณที่จะใส่ binder ก่อน",
+        "wound",
+      ),
+      c(
+        "sheet",
+        "No binder? Use a folded sheet tightened with 2 large clamps",
+        "ไม่มี binder ใช้ผ้าปูเตียงพับรัดแล้วหนีบด้วย clamp ใหญ่ 2 ตัว",
+        "binder",
+      ),
+      c(
+        "crest",
+        "Centre it on the iliac crests",
+        "วางตรง iliac crest",
+        "body",
+      ),
+      c(
+        "days",
+        "Leave it on for several days until surgery",
+        "ใส่ค้างไว้หลายวันจนผ่าตัด",
+        "binder",
+      ),
     ],
-    ["padding"],
+    ["all", "knees", "legs", "wound", "sheet"],
     "binder",
   ),
 ]);
@@ -208,8 +238,8 @@ const resus = pick(
     ),
     c(
       "fluid",
-      "Senior-led haemorrhage protocol; reassess fluids",
-      "แผน haemorrhage โดย senior ประเมิน fluid ซ้ำ",
+      "Crystalloid loading 2 L (e.g. 0.9% NSS), then reassess",
+      "ให้ crystalloid 2 L (เช่น 0.9% NSS) แล้วประเมินซ้ำ",
       "fluid",
     ),
     c(
@@ -220,8 +250,8 @@ const resus = pick(
     ),
     c(
       "binder",
-      "Binder with the senior team",
-      "Binder ภายใต้ทีมอาวุโส",
+      "Pelvic binder now for suspected pelvic fracture",
+      "ใส่ pelvic binder ทันทีเมื่อสงสัย pelvic fracture",
       "binder",
     ),
     c(
@@ -270,6 +300,13 @@ const wound = sort(
       "เลือด PV: สงสัย internal communication",
       "organ",
       "suspect",
+    ),
+    c(
+      "peri",
+      "Perineal or vaginal laceration near the fracture",
+      "แผลฉีกขาดบริเวณ perineum หรือช่องคลอดใกล้ fracture",
+      "wound",
+      "open",
     ),
     c(
       "closed",
@@ -379,63 +416,79 @@ const unstable = sort(
   ],
 );
 const sourceAntibiotics = combo([
+  sort(
+    [
+      c("g12", "Cefazolin 2 g IV", "Cefazolin 2 g IV", "antibiotic", "g12"),
+      c(
+        "g3",
+        "Cefazolin + gentamicin 240 mg IV drip over 30 min",
+        "Cefazolin + gentamicin 240 mg IV drip 30 นาที",
+        "antibiotic",
+        "g3",
+      ),
+      c(
+        "g3c",
+        "Cefazolin + gentamicin + penicillin G 2.4 MU IV",
+        "Cefazolin + gentamicin + penicillin G 2.4 MU IV",
+        "antibiotic",
+        "g3c",
+      ),
+      c(
+        "allergy",
+        "Vancomycin (+ clindamycin for anaerobes) instead",
+        "ใช้ vancomycin (+ clindamycin สำหรับ anaerobe) แทน",
+        "antibiotic",
+        "allergy",
+      ),
+    ],
+    [
+      ["g12", "Gustilo grade 1–2", "Gustilo grade 1–2"],
+      ["g3", "Grade 3", "Grade 3"],
+      ["g3c", "Grade 3, contaminated (farm)", "Grade 3 ปนเปื้อน (เช่น ไร่นา)"],
+      ["allergy", "Penicillin allergy", "แพ้ penicillin"],
+    ],
+  ),
   pick(
     [
-      c(
-        "cef",
-        "Cefazolin 2 g: handout Grades I–II",
-        "Cefazolin 2 g: handout Grade I–II",
-        "antibiotic",
-      ),
-      c(
-        "gent",
-        "Gentamicin 240 mg IV / 30 min",
-        "Gentamicin 240 mg IV / 30 min",
-        "antibiotic",
-      ),
-      c(
-        "pen",
-        "Penicillin 2.4 MU: contaminated Grade III",
-        "Penicillin 2.4 MU: Grade III ปนเปื้อน",
-        "antibiotic",
-      ),
-      c(
-        "tet",
-        "Assess tetanus prophylaxis",
-        "ประเมิน tetanus prophylaxis",
-        "tetanus",
-      ),
+      c("tet", "Tetanus prophylaxis", "ป้องกันบาดทะยัก (tetanus)", "tetanus"),
       c(
         "deb",
-        "Urgent senior surgical debridement plan",
-        "ทีมอาวุโสวางแผน debridement ด่วน",
+        "Urgent surgical debridement",
+        "ผ่าตัด debridement แผลโดยเร็ว",
         "team",
       ),
       c(
-        "slide",
-        "Use slide 29's different doses as equivalent",
-        "ถือว่าขนาดยา S29 เหมือน handout",
-        "antibiotic",
+        "consult",
+        "Consult orthopaedics (and other teams as needed)",
+        "ปรึกษาออร์โธปิดิกส์ (และทีมอื่นตามจำเป็น)",
+        "phone",
       ),
       c(
         "delay",
-        "Wait for symptoms of infection",
-        "รอมีอาการติดเชื้อ",
+        "Wait for signs of infection before antibiotics",
+        "รอมีอาการติดเชื้อก่อนให้ antibiotic",
+        "wound",
+      ),
+      c(
+        "close",
+        "Close the wound tightly in the ER",
+        "เย็บปิดแผลให้แน่นในห้องฉุกเฉิน",
         "wound",
       ),
     ],
-    ["cef", "gent", "pen", "tet", "deb"],
+    ["tet", "deb", "consult"],
     "wound",
   ),
   s("gauge", [], {
-    range: [0, 180],
-    band: [0, 60],
+    range: [0, 360],
+    band: [0, 180],
     unit: "min",
     art: "antibiotic",
     instruction: bi(
-      "Do not wait: early antibiotics, ideally within 1 h (current BOAST).",
-      "ไม่รอ: ให้ antibiotic เร็วที่สุด ideally ≤1 h (BOAST)",
+      "By when (after injury) should IV antibiotics be started?",
+      "ควรเริ่มให้ antibiotic ทางหลอดเลือดภายในกี่นาทีหลังบาดเจ็บ?",
     ),
+    mistake: "late_antibiotics",
   }),
 ]);
 type Row = {
@@ -448,6 +501,10 @@ type Row = {
   key: LocalText;
   note?: string;
   concepts?: SafetyConceptId[];
+  /** Shown to learners under "Why?" when a newer guideline differs from the lecture. */
+  guideline?: LocalText;
+  /** A must-pass safety item in the post-test pass standard. */
+  mustPass?: boolean;
 };
 const r = (
   id: string,
@@ -498,14 +555,14 @@ export const practiceRows: Row[] = [
       [
         "Symphyseal ligament",
         "Symphyseal ligament",
-        "Resists external rotation",
-        "ต้าน external rotation",
+        "Front of the ring: resists external rotation",
+        "ด้านหน้าของวงแหวน: ต้าน external rotation",
       ],
       [
         "Sacrospinous",
         "Sacrospinous",
-        "Pelvic-floor rotational restraint",
-        "ต้าน rotation ของ pelvic floor",
+        "Pelvic floor (ischial spine): resists external rotation",
+        "Pelvic floor (ischial spine): ต้าน external rotation",
       ],
       [
         "Sacrotuberous",
@@ -516,8 +573,8 @@ export const practiceRows: Row[] = [
       [
         "Posterior SI complex",
         "Posterior SI complex",
-        "Key strong stability complex",
-        "โครงสร้างสำคัญต่อ stability",
+        "Strongest — the key to pelvic stability",
+        "แข็งแรงที่สุด — สำคัญที่สุดต่อ stability",
       ],
       [
         "Iliolumbar",
@@ -582,9 +639,9 @@ export const practiceRows: Row[] = [
         c("gu", "Lower GU 16%", "Lower GU 16%", "organ", "less"),
       ],
       [
-        ["very", ">40%", ">40%"],
-        ["common", "20–40%", "20–40%"],
-        ["less", "<20%", "<20%"],
+        ["very", "More than 40%", "มากกว่า 40%"],
+        ["common", "20% to 40%", "20% ถึง 40%"],
+        ["less", "Less than 20%", "น้อยกว่า 20%"],
       ],
     ),
     ["LO1"],
@@ -645,7 +702,11 @@ export const practiceRows: Row[] = [
       "เตรียม IV ตรวจเลือด blood และ stabilization พร้อมแจ้งทีม",
     ),
     {
-      note: "Source-recall exercise: S23 teaches a fixed 2 L crystalloid load. NICE NG39 advises no crystalloids for active bleeding in hospital. Do not present this source regimen as a current universal order; local protocol/senior review required.",
+      note: "Follows lecture S23 (2 L crystalloid, binder for every suspected pelvic fracture). Newer guideline shown to learners as a note.",
+      guideline: bi(
+        "Newer guideline: NICE NG39 (2016) prefers early blood products and limits crystalloid in active bleeding. Follow your local protocol.",
+        "แนวทางใหม่: NICE NG39 (2016) แนะนำให้ blood products เร็วและจำกัด crystalloid เมื่อมีเลือดออก ให้ทำตามแนวทางของโรงพยาบาล",
+      ),
     },
   ),
   r(
@@ -656,13 +717,13 @@ export const practiceRows: Row[] = [
     ["LO6"],
     17,
     bi(
-      "Greater trochanters; supported alignment, padding and skin checks.",
-      "Greater trochanters จัดแนวอย่างปลอดภัย รองผ้าและตรวจผิวหนัง",
+      "Binder for every suspected pelvic fracture: centred on the greater trochanters, snug (not loose, not over-tight), legs internally rotated with padding; remove within 24 h.",
+      "ใส่ binder ทุกรายที่สงสัย: กึ่งกลางที่ greater trochanter รัดพอดี (ไม่หลวม ไม่แน่นเกิน) จัดขาหมุนเข้าและรองผ้า ถอดภายใน 24 ชม.",
     ),
     {
       doc: "H",
       concepts: ["S2"],
-      note: "The tightness gauge is conceptual, not validated pressure. Avoid forced leg rotation when hip injury is suspected; trained senior applies the device.",
+      note: "The tightness gauge is conceptual, not a validated pressure.",
     },
   ),
   r(
@@ -678,7 +739,7 @@ export const practiceRows: Row[] = [
           "binder",
         ),
         c("crest", "Compression at the waist", "กดที่เอว", "body"),
-        c("thigh", "Compression around the thighs", "กดที่ต้นขา", "body"),
+        c("thigh", "Compression over the belly button", "กดบริเวณสะดือ", "body"),
       ],
       "reduce",
     ),
@@ -710,38 +771,51 @@ export const practiceRows: Row[] = [
           ["out", "Outside", "Outside"],
         ],
       ),
+      sort(
+        [
+          c("bleed", "Blood loss (pelvis, abdomen, haemothorax)", "เสียเลือด (pelvis ช่องท้อง haemothorax)", "blood", "loss"),
+          c("ich", "Head injury with intracranial haemorrhage", "Head injury มีเลือดออกในสมอง", "organ", "cns"),
+          c("spinal", "Spinal shock", "Spinal shock", "organ", "neuro"),
+          c("tension", "Tension haemothorax", "Tension haemothorax", "body", "pressure"),
+        ],
+        [
+          ["loss", "Blood loss", "เสียเลือด"],
+          ["cns", "Intracranial cause", "สาเหตุในกะโหลก"],
+          ["neuro", "Neurological cause", "สาเหตุทางระบบประสาท"],
+          ["pressure", "Pressure effect", "แรงกด (pressure effect)"],
+        ],
+      ),
+      sort(
+        [
+          c("plexus", "Sacral venous plexus", "Sacral venous plexus", "blood", "venous"),
+          c("bone", "Bleeding fracture surfaces", "เลือดออกจากผิวกระดูกที่หัก", "pelvis", "venous"),
+          c("sga", "Superior gluteal artery (most common artery)", "Superior gluteal artery (หลอดเลือดแดงที่พบบ่อยที่สุด)", "blood", "arterial"),
+          c("lsa", "Lateral sacral / internal pudendal artery", "Lateral sacral / internal pudendal artery", "blood", "arterial"),
+        ],
+        [
+          ["venous", "Venous / bone ≈ 80% — binder, packing", "หลอดเลือดดำ/กระดูก ≈ 80% — binder, packing"],
+          ["arterial", "Arterial ≈ 20% — angio-embolization", "หลอดเลือดแดง ≈ 20% — angio-embolization"],
+        ],
+      ),
       sequence(
         [
-          c(
-            "re",
-            "Reassess transient response; continue resuscitation",
-            "ประเมิน transient response และ resuscitation ต่อ",
-            "blood",
-          ),
-          c(
-            "fast",
-            "FAST and other bleeding-source assessment",
-            "FAST และหาแหล่งเลือดอื่น",
-            "organ",
-          ),
-          c(
-            "senior",
-            "Senior haemorrhage-control decision",
-            "ทีมอาวุโสเลือก haemorrhage control",
-            "phone",
-          ),
+          c("atls", "ATLS + 2 L fluid + pelvic sheet/binder", "ATLS + fluid 2 L + pelvic sheet/binder", "binder"),
+          c("sbp", "SBP still <100: continue fluid and blood", "SBP ยัง <100: ให้ fluid และเลือดต่อ", "blood"),
+          c("fast", "FAST or CT abdomen", "FAST หรือ CT abdomen", "organ"),
+          c("lap", "FAST positive: laparotomy ± pelvic packing + pelvic ex-fix", "FAST บวก: laparotomy ± pelvic packing + pelvic ex-fix", "team"),
+          c("angio", "Still hypotensive after 4 U PRBC: angiography/embolization", "ยัง hypotension หลัง PRBC 4 U: angiography/embolization", "ct"),
         ],
-        ["re", "fast", "senior"],
+        ["atls", "sbp", "fast", "lap", "angio"],
       ),
     ]),
     ["LO5"],
     38,
     bi(
-      "80% venous, 20% arterial in the source; angio addresses arteries, not venous bleeding.",
-      "เอกสาร: venous 80% arterial 20%; angio ไม่แก้ venous bleeding",
+      "Bleeding is 80% venous/bone and 20% arterial (superior gluteal most often). Angio-embolization finds an arterial source in only 10–15% and does not stop venous bleeding. 50–69% of unstable fractures need ≥4 U LPRC. Lactate ≥4: keep resuscitating; lactate <4: definitive fixation.",
+      "เลือดออกจาก venous/กระดูก 80% และ arterial 20% (superior gluteal พบบ่อยสุด) angio-embolization พบแหล่ง arterial เพียง 10–15% และไม่แก้ venous bleeding ผู้ป่วย unstable 50–69% ต้องใช้ LPRC ≥4 U lactate ≥4 ให้ resuscitate ต่อ lactate <4 จึงทำ definitive fixation",
     ),
     {
-      note: "S38 flowchart thresholds (SBP 100, 4 U PRBC, lactate 4) are source-specific, not an autonomous algorithm. Imaging, packing, embolization and ex-fix decisions require the trauma team.",
+      note: "Flowchart follows lecture S38; then lactate ≥4 → continue resuscitation, lactate <4 → definitive fixation.",
     },
   ),
   r(
@@ -792,26 +866,27 @@ export const practiceRows: Row[] = [
       [
         c("lumbar", "L-spine / transverse processes", "L-spine / TP"),
         c("si", "SI joints / posterior ring", "SI / posterior ring"),
-        c("acet", "Acetabulum / hip congruence", "Acetabulum / hip congruence"),
+        c("acet", "Acetabulum (left)", "Acetabulum (ซ้าย)"),
+        c("hip", "Femoral head position (left hip)", "ตำแหน่งหัวกระดูก femur (สะโพกซ้าย)"),
         c("rami", "Pubic rami / symphysis", "Pubic rami / symphysis"),
       ],
       {
-        targets: ["acet", "rami"],
-        image: "/assets/teaching/slide-14.jpg",
+        targets: ["acet", "hip", "rami"],
+        image: "/assets/teaching/slide-41.jpg",
         instruction: bi(
-          "Trace all four checkpoints, then mark report-supported abnormalities: acetabular injury, posterior hip dislocation and rami injury.",
-          "ไล่ 4 จุด แล้วเลือกจุดที่รายงานสนับสนุน: acetabulum, posterior hip dislocation และ rami",
+          "Trace the ring clockwise through all five checkpoints, then mark the three abnormal ones on this film.",
+          "ไล่วงแหวนตามเข็มนาฬิกาครบ 5 จุด แล้วเลือก 3 จุดที่ผิดปกติในภาพนี้",
         ),
       },
     ),
     ["LO3"],
     41,
     bi(
-      "Review hip congruence and both rings; the source case report is authoritative.",
-      "ตรวจ hip congruence และทั้งสอง ring ยึดรายงานเคสจากเอกสาร",
+      "Read the AP pelvis systematically around the whole ring and both hips. Four rami broken (straddle fracture) means: suspect a posterior ring injury too.",
+      "อ่าน AP pelvis อย่างเป็นระบบรอบวงแหวนและสะโพกทั้งสองข้าง หาก rami หักทั้ง 4 (straddle fracture) ให้สงสัย posterior ring injury ด้วย",
     ),
     {
-      note: "S14 is an annotated normal reading example, not the injured patient's film. Abnormality scoring follows S41's report, not invented pixel findings. No validated diagnostic hotspot overlay.",
+      note: "Uses the slide-41 film of the 22-year-old (left acetabular fracture, posterior hip dislocation, rami fractures).",
     },
   ),
   r(
@@ -849,7 +924,11 @@ export const practiceRows: Row[] = [
       "Inlet ดู AP displacement; outlet ดู vertical displacement",
     ),
     {
-      note: "Plan quotes 25°/60°, whereas handout pp13–14 states 30–45° for each direction. Exact beam angles must be approved; direction/diagnostic purpose is taught without a disputed angle.",
+      note: "Angles follow lecture slide 16 (AO: inlet ~25° caudal, outlet ~60° cephalad). Handout pp13–14 gives 30–45°; learners see this as a note.",
+      guideline: bi(
+        "The handout describes 30–45° tilts; the lecture uses the AO angles (inlet ~25° toward the feet, outlet ~60° toward the head).",
+        "เอกสารประกอบระบุมุม 30–45° ส่วนสไลด์ใช้มุมของ AO (inlet ~25° ไปทางเท้า, outlet ~60° ไปทางศีรษะ)",
+      ),
     },
   ),
   r(
@@ -1000,11 +1079,11 @@ export const practiceRows: Row[] = [
     ["LO2", "LO4"],
     27,
     bi(
-      "Protect dignity and consent. Meatal blood suggests GU injury; it does not confirm the diagnosis.",
-      "รักษาศักดิ์ศรีและ consent; meatal blood ชวนคิด GU injury ไม่ยืนยัน diagnosis",
+      "Examine the perineum with consent and a chaperone: blood at the meatus or a high-riding prostate on PR suggests urethral injury; blood on PR or PV means an open (internal) pelvic fracture until proven otherwise.",
+      "ตรวจ perineum โดยขอ consent และมีผู้ช่วย: เลือดที่รูเปิดท่อปัสสาวะหรือ prostate ลอยสูง (high-riding) จาก PR ชวนคิด urethral injury; เลือดจาก PR หรือ PV ให้ถือว่าเป็น open pelvic fracture จนกว่าจะพิสูจน์ได้",
     ),
     {
-      note: "The plan invents a high-riding prostate finding. None is supplied for this patient: do not reveal it as an observed result. No intimate exam is performed by a junior independently.",
+      note: "Round 2 teaches what each perineal/neurological finding means (lecture S27); it does not add findings to this patient.",
     },
   ),
   r(
@@ -1012,28 +1091,16 @@ export const practiceRows: Row[] = [
     "Compression-test safety",
     "ความปลอดภัย compression test",
     combo([
-      sequence(
+      pick(
         [
-          c(
-            "med",
-            "Source: medial pressure",
-            "ในเอกสาร: medial pressure",
-            "body",
-          ),
-          c(
-            "post",
-            "Source: posterior iliac pressure",
-            "ในเอกสาร: posterior iliac pressure",
-            "body",
-          ),
-          c(
-            "pub",
-            "Source: posterior pubis pressure",
-            "ในเอกสาร: posterior pubis pressure",
-            "body",
-          ),
+          c("med", "Medial pressure on both iliac crests", "กดจาก iliac crest ทั้งสองข้างเข้าหากึ่งกลาง", "body"),
+          c("post", "Posterior pressure on the iliac crests / ASIS", "กด iliac crest / ASIS ลงด้านหลัง", "body"),
+          c("pub", "Downward pressure on the pubis", "กดลงที่ pubis", "body"),
+          c("rock", "Rock the pelvis repeatedly to feel crepitus", "โยกเชิงกรานซ้ำเพื่อคลำ crepitus", "body"),
+          c("rom", "Full hip range of motion against pain", "ขยับสะโพกเต็มช่วงแม้เจ็บ", "body"),
         ],
         ["med", "post", "pub"],
+        "body",
       ),
       image(
         [
@@ -1056,8 +1123,8 @@ export const practiceRows: Row[] = [
     ["LO2"],
     10,
     bi(
-      "The sequence is source recall, not an action to perform in this unstable case.",
-      "ลำดับนี้เพื่อทบทวนเอกสาร ไม่ใช่ให้ทำในเคส unstable",
+      "Pelvic compression test = 3 gentle manoeuvres, done once only. Do not do it in an unstable patient, and stop after the first positive step.",
+      "Pelvic compression test มี 3 ท่า ทำเบาๆ ครั้งเดียว ไม่ทำในผู้ป่วย unstable และหยุดเมื่อท่าแรกให้ผลบวก",
     ),
     { doc: "H" },
   ),
@@ -1069,8 +1136,8 @@ export const practiceRows: Row[] = [
     ["LO4"],
     18,
     bi(
-      "Open means communication with the fracture. Blood PR/PV raises suspicion, not certainty.",
-      "Open คือแผลติดต่อ fracture; เลือด PR/PV เป็นข้อสงสัย ไม่ยืนยัน",
+      "Open = a wound that communicates with the fracture: external (perineal wound, fat globules or bone in the wound) or internal (blood PR/PV). Mortality of open pelvic fracture is 30–50%.",
+      "Open = แผลที่ติดต่อกับ fracture ทั้งภายนอก (แผล perineum, fat globules หรือกระดูกในแผล) และภายใน (เลือด PR/PV) อัตราตายของ open pelvic fracture 30–50%",
     ),
     { doc: "H", concepts: ["S6"] },
   ),
@@ -1095,12 +1162,16 @@ export const practiceRows: Row[] = [
     ["LO4", "LO5"],
     19,
     bi(
-      "Source-table recall only: confirm allergy, age/weight, renal function and local protocol before prescribing.",
-      "ทบทวนตารางเท่านั้น ก่อนสั่งยาต้องตรวจ allergy อายุ/น้ำหนัก renal function และ local protocol",
+      "Open pelvic fracture: IV antibiotics by Gustilo grade within 3 h, tetanus prophylaxis and urgent surgical debridement. Check allergy, weight and kidney function before prescribing.",
+      "Open pelvic fracture: ให้ antibiotic ทางหลอดเลือดตาม Gustilo grade ภายใน 3 ชม. ป้องกันบาดทะยัก และผ่าตัด debridement โดยเร็ว ตรวจประวัติแพ้ยา น้ำหนัก และการทำงานของไตก่อนสั่งยา",
     ),
     {
       doc: "H",
-      note: "S29: cefazolin 1 g/gentamicin 240 mg/penicillin 1.2 MU; H19: cefazolin 2 g for I–II, add gentamicin 240 mg (30 min) for III, penicillin 2.4 MU for contamination. H19 does not explicitly restate the Grade III cefazolin dose. H19 timing ≤3 h conflicts with BOAST ideally ≤1 h. These adult source doses are NOT prescriptions for this 15-year-old.",
+      note: "Follows handout H19 (Gustilo table, within 3 h). Slide 29 lists cefazolin 1 g + gentamicin 240 mg + penicillin 1.2 MU — please confirm one regimen. Adult doses.",
+      guideline: bi(
+        "Newer guideline: BOAST (2017) recommends antibiotics as soon as possible, ideally within 1 hour of injury.",
+        "แนวทางใหม่: BOAST (2017) แนะนำให้ antibiotic เร็วที่สุด ภายใน 1 ชั่วโมงหลังบาดเจ็บ",
+      ),
     },
   ),
   r(
@@ -1135,8 +1206,8 @@ practiceRows.find((row) => row.id === "C3S1")!.game = combo([
       ),
       c(
         "motor",
-        "Document L5/S1 ankle movement, sensation and ankle reflex",
-        "บันทึก L5/S1 movement sensation และ ankle reflex",
+        "Check L5/S1: ankle dorsiflexion, sensation and ankle reflex",
+        "ตรวจ L5/S1: กระดกข้อเท้าขึ้น การรับความรู้สึก และ ankle reflex",
         "organ",
       ),
       c(
@@ -1235,6 +1306,65 @@ practiceRows.find((row) => row.id === "C2S5")!.game = combo([
     ["posterior", "unstable", "unclear", "associated"],
   ),
 ]);
+// Lecture facts added as extra rounds (2026-10 objective review).
+const row = (id: string) => practiceRows.find((item) => item.id === id)!;
+row("C2S1").game = combo([
+  row("C2S1").game,
+  image(
+    [
+      c("90", "About 90%", "ประมาณ 90%", "pelvis"),
+      c("50", "About 50%", "ประมาณ 50%", "pelvis"),
+      c("100", "100% — CT is never needed", "100% — ไม่ต้องทำ CT เลย", "ct"),
+    ],
+    "90",
+  ),
+]);
+row("C2S1").key = bi(
+  "Trauma series: C-spine lateral, chest AP and pelvis AP. The AP pelvis picks up about 90% of pelvic fractures; posterior injuries can still be missed.",
+  "Trauma series: C-spine lateral, chest AP และ pelvis AP ภาพ AP pelvis คัดกรองได้ราว 90% แต่ยังพลาด posterior injury ได้",
+);
+row("C2S2").game = combo([
+  row("C2S2").game,
+  image(
+    [
+      c("posterior", "Suspect a posterior ring injury: get inlet/outlet views or CT", "สงสัย posterior ring injury: ส่ง inlet/outlet หรือ CT", "beam"),
+      c("anterior", "Anterior injury only — no more imaging needed", "บาดเจ็บด้านหน้าอย่างเดียว ไม่ต้องส่งภาพเพิ่ม", "pelvis"),
+      c("remove", "Remove the binder to see the fracture better", "ถอด binder เพื่อดู fracture ให้ชัด", "binder"),
+    ],
+    "posterior",
+  ),
+]);
+row("C2S3").game = combo([
+  row("C2S3").game,
+  sort(
+    [
+      c("in", "X-ray tube tilted ~25° toward the feet (caudal)", "หลอดเอกซเรย์เอียง ~25° ไปทางเท้า (caudal)", "beam-inlet", "inlet"),
+      c("out", "X-ray tube tilted ~60° toward the head (cephalad)", "หลอดเอกซเรย์เอียง ~60° ไปทางศีรษะ (cephalad)", "beam-outlet", "outlet"),
+    ],
+    [
+      ["inlet", "Inlet view", "Inlet view"],
+      ["outlet", "Outlet view", "Outlet view"],
+    ],
+  ),
+]);
+row("C3S2").game = combo([
+  row("C3S2").game,
+  sort(
+    [
+      c("prostate", "High-riding prostate on PR", "คลำ prostate ลอยสูง (high-riding) จาก PR", "organ", "urethra"),
+      c("meatal", "Blood at the urethral meatus", "เลือดที่รูเปิดท่อปัสสาวะ", "foley", "urethra"),
+      c("prblood", "Blood on PR examination", "มีเลือดจากการตรวจ PR", "organ", "open"),
+      c("pvblood", "Vaginal bleeding on PV examination", "มีเลือดจากการตรวจ PV", "organ", "open"),
+      c("anal", "Reduced perianal sensation or anal tone", "การรับความรู้สึกรอบทวาร/anal tone ลดลง", "organ", "nerve"),
+      c("ankle", "Weak ankle dorsiflexion, absent ankle reflex", "กระดกข้อเท้าอ่อนแรง ankle reflex หาย", "body", "nerve"),
+    ],
+    [
+      ["urethra", "Urethral injury — no Foley", "Urethral injury — ห้ามใส่ Foley"],
+      ["open", "Open (internal) pelvic fracture", "Open pelvic fracture (ภายใน)"],
+      ["nerve", "Sacral / L5–S1 nerve injury", "Sacral / L5–S1 nerve injury"],
+    ],
+  ),
+]);
 const retrieval = (
   id: string,
   source: Row,
@@ -1264,21 +1394,27 @@ const bosses = [
   retrieval(`C${Math.floor(i / 3)}B${(i % 3) + 1}`, row, "boss"),
 );
 const removal = r(
-  "FS4",
-  "Binder reassessment",
-  "ทบทวน binder",
+  "FS8",
+  "Binder removal plan",
+  "แผนถอด binder",
   image(
     [
       c(
         "team",
-        "Senior review: AP with binder may mask injury; plan safe removal ≤24 h",
-        "Senior review: AP ที่มี binder อาจซ่อน injury วางแผนปลด ≤24 h",
+        "Remove as soon as possible, within 24 h; if the AP shows no unstable fracture remove it — ask orthopaedics if unsure",
+        "ถอดให้เร็วที่สุดภายใน 24 ชม. ถ้า AP ไม่พบ unstable fracture ให้ถอด หากไม่แน่ใจให้ปรึกษาออร์โธปิดิกส์",
         "binder",
       ),
       c(
-        "normal",
-        "Normal AP alone: remove immediately without review",
-        "AP ปกติ: ปลดเองทันที",
+        "days",
+        "Keep it on for several days until definitive surgery",
+        "ใส่ไว้หลายวันจนผ่าตัด",
+        "binder",
+      ),
+      c(
+        "now",
+        "Take it off before the first X-ray to see the fracture",
+        "ถอดก่อนเอกซเรย์ครั้งแรกเพื่อดู fracture",
         "beam",
       ),
     ],
@@ -1287,177 +1423,110 @@ const removal = r(
   ["LO6"],
   18,
   bi(
-    "Normal AP under a binder does not exclude unstable injury; use an agreed senior removal plan.",
-    "AP ปกติขณะมี binder ไม่ตัด unstable injury ใช้แผนที่ตกลงกับ senior",
+    "Remove the binder as soon as possible and within 24 h (pressure sores). If the AP pelvis shows no unstable fracture, remove it; ask orthopaedics if unsure.",
+    "ถอด binder ให้เร็วที่สุดภายใน 24 ชม. (เสี่ยงแผลกดทับ) ถ้า AP pelvis ไม่พบ unstable fracture ให้ถอด ไม่แน่ใจให้ปรึกษาออร์โธปิดิกส์",
   ),
   {
     doc: "H",
     concepts: ["S4"],
-    note: "H18 says remove after normal AP; BOAST notes binder can mask instability and requires a safe removal protocol, ideally within 24 h. Retain supervised reassessment rather than an automatic removal instruction.",
+    note: "Follows handout H18 and slide 34.",
+    guideline: bi(
+      "Newer guideline: BOAST notes a binder can hide displacement on the AP film, so many centres remove it only under a senior-agreed protocol.",
+      "แนวทางใหม่: BOAST ระบุว่า binder อาจบังการเคลื่อนของกระดูกในภาพ AP หลายโรงพยาบาลจึงถอดตามแผนที่ senior เห็นชอบ",
+    ),
   },
 );
-const finalRows = [
-  practiceRows[2],
-  practiceRows[18],
-  practiceRows[14],
-  practiceRows[20],
-  practiceRows[5],
-  practiceRows[7],
-  practiceRows[23],
-  removal,
-].map((row, i) => retrieval(`FS${i + 1}`, row, "gauntlet"));
+export { practiceRows as lectureRows };
+// Post-test blueprint: one item per objective plus binder removal. FS2 and FS6 are must-pass safety items.
+const blueprint = [
+  row("C0S3"), // LO1 mechanism
+  { ...row("C3S5"), mustPass: true }, // LO2 exam / LO5 — no Foley with meatal blood
+  row("C2S4"), // LO3 imaging
+  row("C3S4"), // LO4 open vs closed
+  row("C1S2"), // LO5 shock
+  { ...row("C1S4"), mustPass: true }, // LO6 binder level
+  row("C3S7"), // LO7 referral
+  removal, // LO6 binder removal
+];
+const finalRows = blueprint.map((item, i) => retrieval(`FS${i + 1}`, item, "gauntlet"));
 const alternateRetrieval = [
   image(
     [
-      c(
-        "lc",
-        "Side impact / compression: LC",
-        "แรงด้านข้าง / compression: LC",
-        "force-lc",
-      ),
-      c(
-        "apc",
-        "Side impact / compression: APC",
-        "แรงด้านข้าง / compression: APC",
-        "force-apc",
-      ),
-      c(
-        "vs",
-        "Side impact / compression: VS",
-        "แรงด้านข้าง / compression: VS",
-        "force-vs",
-      ),
+      c("lc", "Side impact / compression: LC", "แรงด้านข้าง / compression: LC", "force-lc"),
+      c("apc", "Side impact / compression: APC", "แรงด้านข้าง / compression: APC", "force-apc"),
+      c("vs", "Side impact / compression: VS", "แรงด้านข้าง / compression: VS", "force-vs"),
     ],
     "lc",
   ),
   pick(
     [
-      c(
-        "stop",
-        "Avoid repeating pelvic compression",
-        "ไม่ตรวจ pelvic compression ซ้ำ",
-        "body",
-      ),
-      c(
-        "senior",
-        "Escalate instability to the senior",
-        "แจ้ง instability ต่อ senior",
-        "phone",
-      ),
-      c(
-        "repeat",
-        "Repeat testing after every response",
-        "ตรวจซ้ำหลังทุก response",
-        "body",
-      ),
+      c("nofoley", "Do not insert a urethral (Foley) catheter", "ไม่ใส่สายสวนปัสสาวะ (Foley)", "foley"),
+      c("uro", "Consult urology", "ปรึกษา urology", "phone"),
+      c("foley", "Insert a Foley to measure urine output", "ใส่ Foley เพื่อวัดปัสสาวะ", "foley"),
+      c("small", "Try a smaller Foley if the first one fails", "ลองใส่ Foley ขนาดเล็กลงถ้าใส่ไม่เข้า", "foley"),
     ],
-    ["stop", "senior"],
+    ["nofoley", "uro"],
+    "organ",
   ),
-  image(
-    [
-      c(
-        "inlet",
-        "AP translation: inlet view",
-        "AP translation: inlet view",
-        "beam-inlet",
-      ),
-      c(
-        "outlet",
-        "AP translation: outlet view",
-        "AP translation: outlet view",
-        "beam-outlet",
-      ),
-      c(
-        "judet",
-        "AP translation: Judet view",
-        "AP translation: Judet view",
-        "beam",
-      ),
-    ],
-    "inlet",
-  ),
-  wound,
   pick(
     [
-      c(
-        "loss",
-        "Class III: 1500–2000 mL estimate",
-        "Class III: ประมาณ 1500–2000 mL",
-        "blood",
-      ),
-      c(
-        "trend",
-        "Reassess response and trends",
-        "ประเมิน response และ trends ซ้ำ",
-        "blood",
-      ),
-      c(
-        "normal",
-        "Normal BP excludes blood loss",
-        "BP ปกติตัด blood loss",
-        "blood",
-      ),
-      c(
-        "measure",
-        "Class estimates are measured patient losses",
-        "Class คือปริมาณที่วัดได้จริง",
-        "blood",
-      ),
+      c("si", "SI joint widening >5 mm", "SI joint กว้าง >5 mm", "pelvis"),
+      c("sym", "Symphysis widening >2.5 cm", "Symphysis กว้าง >2.5 cm", "pelvis"),
+      c("up", "Hemipelvis displaced upwards", "Hemipelvis เคลื่อนขึ้น", "force-vs"),
+      c("ramus", "Single undisplaced ramus crack, ring intact", "Ramus ร้าวเส้นเดียวไม่เคลื่อน วงแหวนสมบูรณ์", "pelvis"),
+      c("bp", "Normal blood pressure", "ความดันปกติ", "blood"),
+    ],
+    ["si", "sym", "up"],
+    "beam",
+  ),
+  pick(
+    [
+      c("pr", "Blood on PR examination", "มีเลือดจากการตรวจ PR", "organ"),
+      c("bone", "Bone fragment in a perineal wound", "มีเศษกระดูกในแผล perineum", "wound"),
+      c("pv", "Vaginal bleeding after pelvic injury", "เลือดออกทางช่องคลอดหลังบาดเจ็บ", "organ"),
+      c("bruise", "Hip bruise with intact skin", "รอยช้ำที่สะโพก ผิวหนังไม่ฉีก", "body"),
+      c("ml", "Closed degloving (Morel–Lavallée)", "Closed degloving (Morel–Lavallée)", "wound"),
+    ],
+    ["pr", "bone", "pv"],
+    "wound",
+  ),
+  pick(
+    [
+      c("loss", "Class III: 1500–2000 mL estimate", "Class III: ประมาณ 1500–2000 mL", "blood"),
+      c("trend", "Reassess response and trends", "ประเมิน response และ trends ซ้ำ", "blood"),
+      c("normal", "Normal BP excludes blood loss", "BP ปกติตัด blood loss", "blood"),
+      c("measure", "Class estimates are measured patient losses", "Class คือปริมาณที่วัดได้จริง", "blood"),
     ],
     ["loss", "trend"],
   ),
   sequence(
     [
-      c(
-        "senior",
-        "Senior-led assessment and application",
-        "ทีมอาวุโสประเมินและใช้ binder",
-        "team",
-      ),
-      c(
-        "troch",
-        "Position over greater trochanters",
-        "วางเหนือ greater trochanters",
-        "binder",
-      ),
-      c(
-        "check",
-        "Reassess skin, physiology and removal plan",
-        "ตรวจผิวหนัง physiology และแผนปลดซ้ำ",
-        "body",
-      ),
+      c("knees", "Slide the binder in under the knees", "สอด binder ใต้เข่า", "binder"),
+      c("troch", "Move it up to the greater trochanters", "เลื่อนขึ้นไปที่ greater trochanter", "binder"),
+      c("legs", "Legs internally rotated, knees/ankles together and padded", "จัดขาหมุนเข้า เข่าและข้อเท้าชิดกันและรองผ้า", "body"),
+      c("tight", "Tighten until snug — not loose, not over-tight", "รัดให้พอดี ไม่หลวม ไม่แน่นเกิน", "binder"),
     ],
-    ["senior", "troch", "check"],
+    ["knees", "troch", "legs", "tight"],
   ),
-  handover(1),
   pick(
     [
-      c(
-        "review",
-        "Senior reassessment of imaging and physiology",
-        "Senior ประเมินภาพและ physiology ซ้ำ",
-        "team",
-      ),
-      c(
-        "plan",
-        "Agreed safe removal protocol; inspect skin",
-        "แผนปลดอย่างปลอดภัย ตรวจผิวหนัง",
-        "binder",
-      ),
-      c(
-        "mask",
-        "Recognize binder may mask AP instability",
-        "ทราบว่า binder อาจซ่อน instability ใน AP",
-        "beam",
-      ),
-      c(
-        "remove",
-        "Remove independently after normal AP",
-        "ปลดเองเมื่อ AP ปกติ",
-        "binder",
-      ),
+      c("gs", "General surgery", "ศัลยกรรมทั่วไป", "phone"),
+      c("ortho", "Orthopaedics", "ออร์โธปิดิกส์", "phone"),
+      c("uro", "Urology", "ศัลยกรรมระบบปัสสาวะ (urology)", "phone"),
+      c("wait", "Wait for CT before calling anyone", "รอผล CT ก่อนค่อยปรึกษา", "ct"),
     ],
-    ["review", "plan", "mask"],
+    ["gs", "ortho", "uro"],
+    "team",
+  ),
+  pick(
+    [
+      c("24", "Remove within 24 hours", "ถอดภายใน 24 ชั่วโมง", "binder"),
+      c("normal", "If the AP pelvis shows no unstable fracture, remove it", "ถ้า AP pelvis ไม่พบ unstable fracture ให้ถอด", "beam"),
+      c("ask", "Ask orthopaedics if unsure", "ไม่แน่ใจให้ปรึกษาออร์โธปิดิกส์", "phone"),
+      c("week", "Keep it on for a week", "ใส่ไว้ 1 สัปดาห์", "binder"),
+    ],
+    ["24", "normal", "ask"],
+    "binder",
   ),
 ];
 finalRows.forEach((row, index) => {
@@ -1495,18 +1564,44 @@ const caseTitles = [
   bi("Danger Down Below", "Danger Down Below — บาดเจ็บร่วม"),
   bi("Trauma Shift", "Trauma Shift — ทบทวนท้ายเวร"),
 ];
-const allRows = [...practiceRows, ...bosses, ...finalRows];
+const pretestRows: Row[] = finalRows.map((item, i) => ({
+  ...item,
+  id: `PT${i + 1}`,
+  mustPass: false,
+  title: bi(
+    item.title.en.replace("Trauma Shift: ", "Pre-test: "),
+    item.title.th.replace("Trauma Shift: ", "แบบทดสอบก่อนเรียน: "),
+  ),
+}));
+const allRows = [...practiceRows, ...bosses, ...finalRows, ...pretestRows];
 export const v4Rows = new Map(allRows.map((row) => [row.id, row]));
+const outcomeFor: Record<LOId, "O1" | "O2" | "O3" | "O4" | "O5" | "O6"> = {
+  LO1: "O1", LO2: "O2", LO3: "O3", LO4: "O2", LO5: "O4", LO6: "O5", LO7: "O6",
+};
+const pretestStory = bi(
+  "Pre-test — 8 quick items before the cases. Answer from what you know now; there is no penalty and you will see your score at the end.",
+  "แบบทดสอบก่อนเรียน — 8 ข้อสั้นๆ ก่อนเริ่มเคส ตอบตามที่รู้ตอนนี้ ไม่มีการหักคะแนน และจะเห็นคะแนนเมื่อทำครบ",
+);
+// Bloom level of each practice skill (teacher analysis; remember < understand < apply < analyse).
+const bloomByKind: Record<string, "remember" | "understand" | "apply" | "analyse"> = {
+  hotspot: "remember", memory_match: "understand", card_sort: "understand", gauge: "understand",
+  sequence: "apply", card_pick: "apply", handover_builder: "apply", image_pick: "apply", ring_trace: "analyse", mcq: "understand",
+};
 const nodes: Node[] = allRows.map((row) => {
-  const index = row.id.startsWith("FS") ? 4 : Number(row.id[1]);
+  const pretest = row.id.startsWith("PT");
+  const index = pretest ? -1 : row.id.startsWith("FS") ? 4 : Number(row.id[1]);
   const story =
     index === 1 && ["C1S6", "C1S7"].includes(row.id)
       ? bi(
           `${stories[1].en} Fixed teaching reveal: BP briefly rises, then falls again. Continue resuscitation and review urgent haemorrhage control before remote CT.`,
           `${stories[1].th} ข้อมูลที่กำหนดไว้: BP เพิ่มช่วงสั้นแล้วลดอีก ดูแล resuscitation ต่อ ประเมิน haemorrhage control ด่วนก่อน CT ที่อยู่ไกล`,
         )
-      : stories[index];
-  const stage = row.id.startsWith("FS")
+      : pretest
+        ? pretestStory
+        : stories[index];
+  const stage = pretest
+    ? "pretest"
+    : row.id.startsWith("FS")
     ? "gauntlet"
     : row.id.includes("B")
       ? "boss"
@@ -1515,8 +1610,11 @@ const nodes: Node[] = allRows.map((row) => {
     ...previous.nodes[0],
     id: row.id,
     contentVersion: MINIGAME_VERSION,
-    caseId: `case-${index}`,
-    missionId: `mission-${index}`,
+    caseId: pretest ? "case-pre" : `case-${index}`,
+    missionId: pretest ? "mission-pre" : `mission-${index}`,
+    mustPass: Boolean(row.mustPass),
+    bloom: bloomByKind[(row.game.rounds?.at(-1) ?? row.game).kind] ?? "understand",
+    guideline: row.guideline,
     interaction: row.game.kind,
     game: row.game,
     objectiveIds: row.lo,
@@ -1530,8 +1628,8 @@ const nodes: Node[] = allRows.map((row) => {
       story,
       key: row.key,
       why: bi(
-        `${row.key.en} Use the source and discuss the supporting evidence, priority and uncertainty with your senior.`,
-        `${row.key.th} ทบทวนเอกสารแล้วอภิปรายหลักฐาน ลำดับสำคัญและความไม่แน่ชัดกับ senior`,
+        `${row.key.en}${row.guideline ? ` ${row.guideline.en}` : ""} Discuss the evidence, priorities and uncertainty with your senior.`,
+        `${row.key.th}${row.guideline ? ` ${row.guideline.th}` : ""} อภิปรายหลักฐาน ลำดับสำคัญและความไม่แน่ชัดกับ senior`,
       ),
     },
     factsAvailableNow: [story.en],
@@ -1539,6 +1637,8 @@ const nodes: Node[] = allRows.map((row) => {
     assetId: null,
     visuals: [],
     textAlternative: row.game.alt.en,
+    // Map lesson objectives onto the platform's outcome codes (O1–O6) instead of inheriting O1 for every station.
+    outcomeIds: [...new Set(row.lo.map((lo) => outcomeFor[lo]))],
     options: [
       {
         id: row.id + "_PASS",
@@ -1552,11 +1652,11 @@ const nodes: Node[] = allRows.map((row) => {
       },
     ],
     correctOptionIds: [row.id + "_PASS"],
-    rationaleRequired: row.game.kind === "handover_builder",
-    explanationBeforeChoices: row.game.kind === "handover_builder",
+    rationaleRequired: row.game.kind === "handover_builder" && !pretest,
+    explanationBeforeChoices: row.game.kind === "handover_builder" && !pretest,
     rationalePrompt: "Connect evidence, priorities and uncertainty.",
-    conceptIds: row.concepts ?? [],
-    safetyFlag: Boolean(row.concepts?.length),
+    conceptIds: pretest ? [] : row.concepts ?? [],
+    safetyFlag: !pretest && Boolean(row.concepts?.length),
     retryId: row.id + "_R",
     nextNodeId: null,
     resourceIds: [
@@ -1598,6 +1698,19 @@ const missions = caseTitles.map((title, index) => {
     nodeIds: ids,
   };
 });
+// Pre-test mission: answered before Case 0; reviewed once all eight items are answered.
+const pretestIds = nodes.filter((n) => n.stage === "pretest").map((n) => n.id);
+pretestIds.forEach((id, i) => {
+  nodes.find((n) => n.id === id)!.nextNodeId = pretestIds[i + 1] ?? null;
+});
+missions.push({
+  id: "mission-pre",
+  number: 6,
+  title: "Pre-test",
+  entry: pretestStory.en,
+  estimatedMinutes: 6,
+  nodeIds: pretestIds,
+});
 export const v4CaseTitles = caseTitles;
 export const v4ResourceText = [
   bi("Anatomy, ligaments and force direction", "Anatomy ligament และทิศทางแรง"),
@@ -1629,7 +1742,11 @@ const newFigures = [16, 38, 41, 44, 50].map((page) => ({
   caption: `Supplied teaching slide ${page}, annotations shown in feedback`,
   optional: false,
 }));
-export const pelvicTraumaContentV4: ContentVersion = {
+/**
+ * Full-lecture station bank (draft, never published as a played edition). It supplies the
+ * pre/post-test items of the focused test edition and the "Lecture notes" extra reading.
+ */
+export const lectureBankContent: ContentVersion = {
   ...previous,
   assets: [...previous.assets, ...newFigures],
   id: MINIGAME_VERSION,
@@ -1685,3 +1802,23 @@ export const pelvicTraumaContentV4: ContentVersion = {
   ],
   finalForms: [],
 };
+
+
+const gameFacts = (spec: MiniGameSpec): string[] => [
+  spec.instruction.en,
+  ...spec.cards.map((card) => card.label.en),
+  ...(spec.bins ?? []).map((bin) => bin.label.en),
+  ...(spec.rounds ?? []).flatMap(gameFacts),
+];
+const gameFactsTh = (spec: MiniGameSpec): string[] => [
+  spec.instruction.th,
+  ...spec.cards.map((card) => card.label.th),
+  ...(spec.bins ?? []).map((bin) => bin.label.th),
+  ...(spec.rounds ?? []).flatMap(gameFactsTh),
+];
+export type LectureNote = { id: string; lo: LOId[]; title: LocalText; key: LocalText; points: LocalText[]; guideline?: LocalText; doc: "S" | "H"; page: number };
+/** Every lecture fact taught by the station bank, grouped for reading (Resources → Lecture notes). */
+export const lectureNotes: LectureNote[] = practiceRows.map((row) => {
+  const en = gameFacts(row.game), th = gameFactsTh(row.game);
+  return { id: row.id, lo: row.lo, title: row.title, key: row.key, guideline: row.guideline, doc: row.doc ?? "S", page: row.page, points: en.map((text, i) => bi(text, th[i] ?? text)) };
+});

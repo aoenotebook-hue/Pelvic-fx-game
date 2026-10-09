@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { pelvicTraumaContentV4 as content } from "./content.v4";
+import { lectureBankContent as content, lectureNotes } from "./lectureBank";
 import type { MiniGameSpec } from "../games/spec";
 import type { Node } from "../domain/types";
 import { testEvidence, POST_TEST_PASS_MARK } from "../domain/assessment";
 import { evaluate, outcomeId } from "../games/evaluate";
 import type { LearningEvent } from "../domain/types";
-import { solve, wrong } from "../test/answers";
+import { solve, wrong } from "../games/answers";
 
 // Every lecture fact (slides, handout, lesson plan objectives LO1–LO7) must be taught in a scored station.
 const LECTURE_FACTS: Array<[string, RegExp]> = [
@@ -70,8 +70,12 @@ const specText = (spec: MiniGameSpec): string => [
 const scored = content.nodes.filter((node) => node.stage === "practice");
 const taught = scored.map((node) => `${specText(node.game!)}\n${node.translation!.title.en}\n${node.translation!.key.en}`).join("\n");
 
+// The played edition is the focused one; the lecture reaches learners through the Resources "Lecture notes".
+const reading = lectureNotes.map((note) => [note.title.en, note.key.en, ...note.points.map((point) => point.en), note.guideline?.en ?? ""].join("\n")).join("\n");
+
 describe("lecture coverage", () => {
   for (const [fact, pattern] of LECTURE_FACTS) it(fact, () => expect(taught).toMatch(pattern));
+  for (const [fact, pattern] of LECTURE_FACTS) it(`reading: ${fact}`, () => expect(reading).toMatch(pattern));
 
   it("every objective LO1–LO7 has at least two practice stations", () => {
     for (let i = 1; i <= 7; i++) expect(scored.filter((node) => node.objectiveIds?.includes(`LO${i}` as never)).length).toBeGreaterThanOrEqual(2);

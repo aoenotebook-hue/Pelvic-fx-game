@@ -3,10 +3,12 @@ import { LEGACY_VERSION, REVISION_VERSION, rewardLedger } from "./rewardRules.ts
 import { LEARNING_VERSION } from "./learningRules.ts";
 import { deriveProgress } from "./engine.ts";
 import type {ContentVersion,LearningEvent,SafetyConceptId} from "./types.ts";
-import { MINIGAME_VERSION, FOCUSED_VERSION, isGameVersion } from "../games/spec.ts";
+import { MINIGAME_VERSION, FOCUSED_VERSION, FOCUSED_TEST_VERSION, isGameVersion } from "../games/spec.ts";
 import { evaluate,outcomeId } from "../games/evaluate.ts";
 import { pelvicTraumaContentV4 } from "../content/content.v4.ts";
 import { pelvicTraumaContentV5 } from "../content/content.v5.ts";
+import { pelvicTraumaContentV6 } from "../content/content.v6.ts";
+const gameContent = (version: unknown) => version === FOCUSED_TEST_VERSION ? pelvicTraumaContentV6 : version === FOCUSED_VERSION ? pelvicTraumaContentV5 : pelvicTraumaContentV4;
 import { computeRewards } from "./rewards.ts";
 import { miniGameEvidence,retrievalEvidence } from "./assessment.ts";
 export const serverRules = {
@@ -42,7 +44,7 @@ export const revisedRules = {
   correctionKeys: { M1N1_R:"M1N1_R_C",M1N2_R:"M1N2_R_A",M1N3_R:"M1N3_R_B",M1N5_R:"M1N5_R_A",M1N4_R:"M1N4_R_C",M1N6_R:"M1N6_R_A",M2N1_R:"M2N1_R_B",M2N2_R:"M2N2_R_C",M2N3_R:"M2N3_R_A",M2N4_R:"M2N4_R_C",M2N5_R:"M2N5_R_B",M3N1_R:"M3N1_R_C",M3N2_R:"M3N2_R_A",M3N3_R:"M3N3_R_C",M3N4_R:"M3N4_R_B" }
 } as const;
 export const handoverNodes = ["M1N6","M2N5","M3N4"];
-export function supportedVersion(version: string) { return [LEGACY_VERSION,REVISION_VERSION,LEARNING_VERSION,MINIGAME_VERSION,FOCUSED_VERSION].includes(version); }
+export function supportedVersion(version: string) { return [LEGACY_VERSION,REVISION_VERSION,LEARNING_VERSION,MINIGAME_VERSION,FOCUSED_VERSION,FOCUSED_TEST_VERSION].includes(version); }
 export function validateLearnerEvent(event: Record<string,unknown>): string | null {
   if (!supportedVersion(String(event.contentVersion))) return "Unsupported content version";
   if(isGameVersion(String(event.contentVersion)))return validateMiniGameEvent(event);
@@ -68,7 +70,7 @@ export function validateLearnerEvent(event: Record<string,unknown>): string | nu
 export function recomputeServerSummary(events: ServerEvent[], version = events[0]?.contentVersion ?? LEGACY_VERSION) {
   if (!supportedVersion(version)) throw new Error("Unsupported content version");
   if(isGameVersion(version)){
-    const content = version === FOCUSED_VERSION ? pelvicTraumaContentV5 : pelvicTraumaContentV4;
+    const content = gameContent(version);
     const valid=events.filter(event=>event.contentVersion===version&&validateMiniGameEvent(event as unknown as Record<string,unknown>)===null) as unknown as LearningEvent[];
     const p=deriveProgress(content,valid),r=computeRewards(content,valid,p),retrieval=retrievalEvidence(content,valid),evidence=miniGameEvidence(content,valid);
     return{...legacySummary(valid),core_score:p.score,first_final_score:retrieval.firstScore,latest_final_score:retrieval.resolvedScore,reviewed_missions:Object.values(p.missionReviewed).filter(Boolean).length,resolved_concepts:p.concepts.filter(c=>c.resolved).length,answered_nodes:p.answeredNodeIds.length,completed:p.locallyComplete,completed_at:p.locallyComplete?new Date().toISOString():null,completion_route:p.locallyComplete?"ordinary":null,reflection_submitted:Boolean(p.reflection),reward_total:r.total,reward_maximum:r.maximum,reward_scheme:r.scheme,first_correct:p.firstCorrectNodeIds.length,corrected_nodes:p.correctedNodeIds.length,clothing_level:r.level,case_stamps:r.caseStamps,safety_badges:r.safetyBadges,reward_achievements:r.achievements,objective_evidence:evidence.objectives,station_mistakes:evidence.mistakes,station_stars:evidence.stars};
@@ -94,7 +96,7 @@ export function recomputeServerSummary(events: ServerEvent[], version = events[0
   return {...old, core_score:firstCorrect.length*2+corrected.length, reviewed_missions:cases.length, resolved_concepts:badges.length, answered_nodes:responses.size, completed, completion_route:completed ? "ordinary" : null, completed_at:completed ? old.completed_at ?? new Date().toISOString() : null, reward_total:rewards.total, reward_maximum:rewards.maximum, reward_scheme:rewards.scheme, first_correct:firstCorrect.length, corrected_nodes:corrected.length, clothing_level:rewards.level, case_stamps:rewards.caseStamps, safety_badges:rewards.safetyBadges, reward_achievements:rewards.achievements};
 }
 function validateMiniGameEvent(event:Record<string,unknown>):string|null {
- const content=event.contentVersion===FOCUSED_VERSION?pelvicTraumaContentV5:pelvicTraumaContentV4;
+ const content=gameContent(event.contentVersion);
  const isCorrection=["correction_response","correction_feedback_ack"].includes(String(event.type));
  const node=content.nodes.find(n=>isCorrection?n.retryId===event.correctionId:n.id===event.nodeId);
  if(["core_response","correction_response"].includes(String(event.type))){if(!node?.game)return "Unknown station";const id=event.type==="core_response"?node.id:node.retryId;const expected=outcomeId(id,node.game,event.gameAnswer);const selected=event.type==="core_response"?event.selectedOptionIds:[event.selectedOptionId];if(!Array.isArray(selected)||selected.length!==1||selected[0]!==expected)return "Game outcome does not match server evaluation";const score=evaluate(node.game,event.gameAnswer).score;if(typeof event.gameScore!=="number"||Math.abs(event.gameScore-score)>1e-9)return "Game score does not match server evaluation";if(event.rationale!==undefined&&(typeof event.rationale!=="string"||event.rationale.length>360))return "Invalid reason";if(event.confidence!==undefined&&!["low","medium","high"].includes(String(event.confidence)))return "Invalid confidence";if(event.type==="core_response"&&node.rationaleRequired&&(typeof event.rationale!=="string"||!event.rationale.trim()))return "Handover reason required";return null;}

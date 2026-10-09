@@ -3,13 +3,13 @@
 //
 // Design (medical-education analysis):
 // - Tidy, long-format raw tabs: one row = one observation, so pivots and formulas work without reshaping.
-// - Pre-test vs post-test on the same 8-item blueprint → raw gain, Hake normalized gain, paired t, Cohen's dz.
+// - Pre-test vs post-test on the same blueprint (8 items in the full edition, 3 in the focused edition) → raw gain, Hake normalized gain, paired t, Cohen's dz.
 // - Classical test theory per station: difficulty p and discrimination D (upper vs lower 27% by post-test score).
 // - Objective (LO1–LO7) first-try mastery per learner; misconception counts for planning the class debrief.
 // - QA/demo/practice records are kept but flagged "Exclude", so cohort statistics are not contaminated.
 import type { ContentVersion, LearningEvent } from "./types.ts";
 import type { EvidenceAttempt, RosterMember, TeacherObservation } from "./assessment.ts";
-import { testEvidence } from "./assessment.ts";
+import { passMarkFor, testEvidence } from "./assessment.ts";
 import { deriveProgress } from "./engine.ts";
 import { computeRewards } from "./rewards.ts";
 import { evaluate } from "../games/evaluate.ts";
@@ -18,7 +18,7 @@ import type { MiniGameSpec } from "../games/spec.ts";
 export const EVALUATION_TABS = {
   attempts: {
     name: "Attempts",
-    headers: ["Record ID", "Student ID", "Cohort", "Attempt ID", "Content version", "Attempt type", "Started (Bangkok)", "Last activity (Bangkok)", "Completed (Bangkok)", "Pre-test /8", "Post-test /8", "Must-pass safety met", "Pass standard met", "Raw gain", "Normalized gain (g)", "Practice first-try /24", "Practice corrected", "Stations answered", "Time on task (min)", "Hints opened", "LO1 first-try %", "LO2 first-try %", "LO3 first-try %", "LO4 first-try %", "LO5 first-try %", "LO6 first-try %", "LO7 first-try %", "Reward", "Exclude from analysis", "Exclude reason"],
+    headers: ["Record ID", "Student ID", "Cohort", "Attempt ID", "Content version", "Attempt type", "Started (Bangkok)", "Last activity (Bangkok)", "Completed (Bangkok)", "Pre-test score", "Post-test score", "Must-pass safety met", "Pass standard met", "Raw gain", "Normalized gain (g)", "Practice first-try score", "Practice corrected", "Stations answered", "Time on task (min)", "Hints opened", "LO1 first-try %", "LO2 first-try %", "LO3 first-try %", "LO4 first-try %", "LO5 first-try %", "LO6 first-try %", "LO7 first-try %", "Reward", "Exclude from analysis", "Exclude reason"],
   },
   responses: {
     name: "Station Responses",
@@ -26,7 +26,7 @@ export const EVALUATION_TABS = {
   },
   cohorts: {
     name: "Pre-Post by Cohort",
-    headers: ["Cohort", "Enrolled (n)", "Completed (n)", "Learners with both tests (n)", "Mean pre /8", "Mean post /8", "Mean gain", "SD of gain", "Paired t", "df", "p (two-sided)", "Effect size dz", "Mean normalized gain", "Pass rate %"],
+    headers: ["Cohort", "Enrolled (n)", "Completed (n)", "Learners with both tests (n)", "Mean pre score", "Mean post score", "Mean gain", "SD of gain", "Paired t", "df", "p (two-sided)", "Effect size dz", "Mean normalized gain", "Pass rate %"],
   },
   misconceptions: {
     name: "Misconceptions",
@@ -221,7 +221,7 @@ export function buildEvaluationWorkbook(input: WorkbookInput): Workbook {
     workbook.roster.push([member.learnerId, member.cohortId, mine.some((fact) => fact.core.size > 0) ? "yes" : "no", mine.some((fact) => fact.attempt.completedAt) ? "yes" : "no", Boolean(reason), reason]);
   }
 
-  workbook.log.push(["Generated (Bangkok)", bangkok(input.generatedAt ?? new Date().toISOString())], ["Content version", content.id], ["Attempts exported", attempts.length], ["Included in statistics", included.length], ["Pass standard", "Post-test ≥ 6/8 first try AND both must-pass items (FS2 no Foley, FS6 binder level) correct"], ["Normalized gain", "(post − pre) / (8 − pre); learners with pre = 8 have no g"], ["Discrimination D", "First-try rate of upper 27% minus lower 27% by post-test score (needs ≥ 4 learners)"]);
+  workbook.log.push(["Generated (Bangkok)", bangkok(input.generatedAt ?? new Date().toISOString())], ["Content version", content.id], ["Attempts exported", attempts.length], ["Included in statistics", included.length], ["Pass standard", `Post-test ≥ ${passMarkFor(content.nodes.filter((node) => node.stage === "gauntlet").length)}/${content.nodes.filter((node) => node.stage === "gauntlet").length} first try AND every must-pass item (${content.nodes.filter((node) => node.stage === "gauntlet" && node.mustPass).map((node) => node.id).join(", ")}) correct`], ["Normalized gain", "(post − pre) / (8 − pre); learners with pre = 8 have no g"], ["Discrimination D", "First-try rate of upper 27% minus lower 27% by post-test score (needs ≥ 4 learners)"]);
   return workbook;
 }
 

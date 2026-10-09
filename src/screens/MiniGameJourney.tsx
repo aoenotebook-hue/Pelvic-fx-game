@@ -6,7 +6,8 @@ import {
   v4ResourceText,
 } from "../content/content.v4";
 import type { ContentVersion, LearningEvent } from "../domain/types";
-import { FOCUSED_VERSION } from "../games/spec";
+import { isFocusedVersion, type LOId } from "../games/spec";
+import { lectureNotes } from "../content/lectureBank";
 import { deriveProgress, nextClientSequence } from "../domain/engine";
 import { computeRewards } from "../domain/rewards";
 import { useLanguage } from "../i18n";
@@ -58,9 +59,13 @@ export function MiniGameJourney({
 }) {
   const { language } = useLanguage();
   const t = (en: string, th: string) => (language === "th" ? th : en);
-  const focused = content.id === FOCUSED_VERSION;
-  const roomAnchors = focused ? [anchors[1], anchors[2], anchors[3]] : anchors;
-  const caseTitle = (index: number) => v4CaseTitles[focused ? index + 1 : index][language];
+  const focused = isFocusedVersion(content.id);
+  // Focused editions: three patient bays across the top, then the post-test bay (if any) bottom right.
+  const roomAnchors = focused ? [anchors[1], anchors[2], anchors[3], anchors[4]].slice(0, content.missions.filter((m) => m.id !== "mission-pre").length) : anchors;
+  const caseTitle = (index: number) =>
+    content.missions.filter((m) => m.id !== "mission-pre")[index]?.id === "mission-post"
+      ? t("Post-test", "แบบทดสอบหลังเรียน")
+      : v4CaseTitles[focused ? index + 1 : index][language];
   const [nodeId, setNodeId] = useState<string | null>(null),
     [position, setPosition] = useState(initialWalk),
     [walking, setWalking] = useState(false),
@@ -232,6 +237,7 @@ export function MiniGameJourney({
           {t("← Emergency room", "← ห้องฉุกเฉิน")}
         </button>
         <h1>{t("Illustrated reference inventory", "คลังบัตรอ้างอิงภาพ")}</h1>
+        {focused && <LectureNotes language={language} />}
         {content.resources
           .filter((r) => r.id !== "ORIENTATION")
           .map((r, i) => (
@@ -569,7 +575,7 @@ export function MiniGameJourney({
             className={`mini-bay ${near.i === i && near.d < 19 ? "near" : ""}`}
             style={{ left: `${roomAnchors[i].x}%`, top: `${roomAnchors[i].y}%` }}
           >
-            {focused || (i > 0 && i < 4) ? (
+            {(focused ? i < 3 : i > 0 && i < 4) ? (
               <img
                 src={`/assets/patients-v2/patient-${focused ? i + 1 : i}.png`}
                 alt={t(
@@ -704,3 +710,40 @@ function CourseFeedback({ emit }: { emit(data: Record<string, unknown>): Promise
     </article>
   );
 }
+
+const objectiveTitles: Record<LOId, { en: string; th: string }> = {
+  LO1: { en: "LO1 Anatomy, ligaments and mechanism", th: "LO1 กายวิภาค ligament และกลไกการบาดเจ็บ" },
+  LO2: { en: "LO2 Examination and associated injuries", th: "LO2 การตรวจร่างกายและการบาดเจ็บร่วม" },
+  LO3: { en: "LO3 Imaging", th: "LO3 ภาพรังสี" },
+  LO4: { en: "LO4 Open fracture and soft tissue", th: "LO4 กระดูกหักแบบเปิดและเนื้อเยื่ออ่อน" },
+  LO5: { en: "LO5 Shock and resuscitation", th: "LO5 ภาวะช็อกและการกู้ชีพ" },
+  LO6: { en: "LO6 Pelvic binder", th: "LO6 Pelvic binder" },
+  LO7: { en: "LO7 Team, referral and urology", th: "LO7 ทีม การส่งต่อ และระบบทางเดินปัสสาวะ" },
+};
+/** Extra reading: every fact of the lecture, grouped by objective, with its slide or handout page. */
+function LectureNotes({ language }: { language: "en" | "th" }) {
+  const t = (en: string, th: string) => (language === "th" ? th : en);
+  return (
+    <article className="panel lecture-notes">
+      <h2>{t("Lecture notes — extra reading", "สรุปบทเรียน — อ่านเพิ่มเติม")}</h2>
+      <p>{t("Everything taught in the pelvic fracture lecture and handout. Not scored; read at your own pace.", "เนื้อหาทั้งหมดจาก lecture และเอกสารประกอบ ไม่นับคะแนน อ่านได้ตามสะดวก")}</p>
+      {(Object.keys(objectiveTitles) as LOId[]).map((lo) => (
+        <details key={lo}>
+          <summary>{objectiveTitles[lo][language]}</summary>
+          {lectureNotes.filter((note) => note.lo[0] === lo).map((note) => (
+            <section key={note.id} className="lecture-note">
+              <h3>{note.title[language]}</h3>
+              <p>{note.key[language]}</p>
+              {note.points.length > 0 && <ul>{note.points.map((point, i) => <li key={i}>{point[language]}</li>)}</ul>}
+              {note.guideline && <p className="hint-line">{note.guideline[language]}</p>}
+              <a href={`/resources/${note.doc === "H" ? "pelvic-fracture-teaching-handout-th.pdf" : "pelvic-fracture-medical-student-2024.pdf"}#page=${note.page}`} target="_blank" rel="noreferrer">
+                {note.doc === "H" ? t("Handout", "เอกสารประกอบ") : t("Slide", "สไลด์")} p{note.page} ↗
+              </a>
+            </section>
+          ))}
+        </details>
+      ))}
+    </article>
+  );
+}
+
